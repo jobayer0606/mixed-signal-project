@@ -74,6 +74,12 @@ function ensureBuses() {
   mx.mainAnalyser = ctx.createAnalyser(); mx.mainAnalyser.fftSize = 1024;
   mx.monitorAnalyser = ctx.createAnalyser(); mx.monitorAnalyser.fftSize = 1024;
   mx.mainBusGain.connect(mx.mainAnalyser);
+  const mxSplitter = ctx.createChannelSplitter(2);
+  mx.mainBusGain.connect(mxSplitter);
+  mx.mainAnalyserL = ctx.createAnalyser(); mx.mainAnalyserL.fftSize = 1024;
+  mx.mainAnalyserR = ctx.createAnalyser(); mx.mainAnalyserR.fftSize = 1024;
+  mxSplitter.connect(mx.mainAnalyserL, 0);
+  mxSplitter.connect(mx.mainAnalyserR, 1);
   mx.monitorBusGain.connect(mx.monitorAnalyser);
   applyListenRouting();
 }
@@ -239,9 +245,15 @@ function ensureExportDestination() {
   ensureBuses();
   if (!mx.exportDestination) {
     mx.exportDestination = ac().createMediaStreamDestination();
-    // This taps the existing Main bus. It does not replace or reroute the
-    // existing destination, so normal playback remains untouched.
+
+    // Capture the existing mixer Main bus.
     mx.mainBusGain.connect(mx.exportDestination);
+
+    // Also capture the existing main-song Web Audio source.
+    // Do not create another MediaElementSource.
+    if (window.signalLabMainSongSource) {
+      window.signalLabMainSongSource.connect(mx.exportDestination);
+    }
   }
   return mx.exportDestination;
 }
@@ -649,8 +661,136 @@ function closeMixer() {
   $("mixer-backdrop").hidden = true;
 }
 
+/* ---------------- Mix Analyzer (read-only; reuses existing analysers) ---------------- */
+
+let azRAF = null;
+
+function computeSignalMetrics(analyser) {
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  let peak = 0, sumSq = 0, clipped = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const a = Math.abs(buf[i]);
+    if (a > peak) peak = a;
+    sumSq += buf[i] * buf[i];
+    if (a >= 0.98) clipped++;
+  }
+  const rms = Math.sqrt(sumSq / buf.length);
+  const peakDb = 20 * Math.log10(Math.max(peak, 1e-9));
+  const rmsDb = 20 * Math.log10(Math.max(rms, 1e-9));
+  const freq = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(freq);
+  const n = freq.length;
+  const band = (lo, hi) => { let s=0,c=0; for(let i=Math.floor(lo*n); i<Math.floor(hi*n); i++){ if(isFinite(freq[i])){s+=freq[i];c++;} } return c ? s/c : -100; };
+  return { peakDb, rmsDb, crest: peakDb - rmsDb, clipped, low: band(0,.15), mid: band(.15,.5), high: band(.5,1), waveform: buf, freq };
+}
+
+function drawWave(canvas, buf) {
+  const c = canvas.getContext("2d"), w = canvas.width, h = canvas.height;
+  c.fillStyle = "#10151d"; c.fillRect(0,0,w,h);
+  c.strokeStyle = "#ffb454"; c.lineWidth = 1.5; c.beginPath();
+  for (let i=0;i<buf.length;i++){ const x=(i/buf.length)*w, y=h/2-buf[i]*(h/2)*.9; i===0?c.moveTo(x,y):c.lineTo(x,y); }
+  c.stroke();
+}
+
+function drawSpectrum(canvas, freq) {
+  const c = canvas.getContext("2d"), w = canvas.width, h = canvas.height;
+  c.fillStyle = "#10151d"; c.fillRect(0,0,w,h);
+  c.fillStyle = "#9b8cff";
+  const n = freq.length, bw = w / n;
+  for (let i=0;i<n;i++){ const v = Math.max(0, Math.min(1, (freq[i]+100)/100)); c.fillRect(i*bw, h-v*h, bw, v*h); }
+}
+
+function chStereoBalance(analyserL, analyserR) {
+  if (!analyserL || !analyserR) return 100;
+  const bufL = new Float32Array(analyserL.fftSize), bufR = new Float32Array(analyserR.fftSize);
+  analyserL.getFloatTimeDomainData(bufL); analyserR.getFloatTimeDomainData(bufR);
+  let sL=0, sR=0;
+  for (let i=0;i<bufL.length;i++) sL += bufL[i]*bufL[i];
+  for (let i=0;i<bufR.length;i++) sR += bufR[i]*bufR[i];
+  const rmsL = Math.sqrt(sL/bufL.length), rmsR = Math.sqrt(sR/bufR.length);
+  const dbL = 20*Math.log10(Math.max(rmsL,1e-9)), dbR = 20*Math.log10(Math.max(rmsR,1e-9));
+  const diff = Math.abs(dbL - dbR);
+  return Math.max(0, 100 - diff * 12); // ~8dB imbalance -> 0
+}
+
+function scoreDetailed(m, analyserL, analyserR) {
+  const clippingScore = Math.max(0, 100 - m.clipped * 4);
+  const loudnessScore = Math.max(0, 100 - Math.abs(m.rmsDb - (-16)) * 4); // target ~-16 dBFS RMS
+  const headroomScore = Math.max(0, Math.min(100, (0 - m.peakDb) * 20)); // 5dB headroom = 100
+  const dynamicsScore = m.crest < 4 ? m.crest / 4 * 60
+    : m.crest > 20 ? Math.max(0, 100 - (m.crest - 20) * 5)
+    : 60 + (m.crest - 4) / 16 * 40;
+  const spread = Math.max(m.low, m.mid, m.high) - Math.min(m.low, m.mid, m.high);
+  const spectralScore = Math.max(0, 100 - Math.max(0, spread - 6) * 4);
+  const stereoScore = chStereoBalance(analyserL, analyserR);
+
+  const total = clippingScore*0.25 + loudnessScore*0.20 + headroomScore*0.15 +
+    dynamicsScore*0.15 + spectralScore*0.15 + stereoScore*0.10;
+
+  return {
+    total: Math.max(0, Math.min(100, Math.round(total))),
+    clippingScore: Math.round(clippingScore), loudnessScore: Math.round(loudnessScore),
+    headroomScore: Math.round(headroomScore), dynamicsScore: Math.round(dynamicsScore),
+    spectralScore: Math.round(spectralScore), stereoScore: Math.round(stereoScore),
+  };
+}
+function azStatus(msg) { $("az-status").textContent = msg || ""; }
+
+function azTick() {
+  const mainA = window.signalLabMainSongAnalyser;
+  const mixA = mx.mainAnalyser;
+
+  if (!mainA) { azStatus("Main song analyzer unavailable — start the main song first."); azRAF = requestAnimationFrame(azTick); return; }
+  if (!mixA) { azStatus("Mixer analyzer unavailable — start the mixer first."); azRAF = requestAnimationFrame(azTick); return; }
+  const mainPaused = !window.signalLabMainAudioEl || window.signalLabMainAudioEl.paused;
+  if (mainPaused && !mx.playing) { azStatus("Playback stopped."); azRAF = null; return; }  azStatus("");
+
+  const mMain = computeSignalMetrics(mainA);
+  const mMix = computeSignalMetrics(mixA);
+  drawWave($("az-wave-main"), mMain.waveform);
+  drawWave($("az-wave-mixed"), mMix.waveform);
+  drawSpectrum($("az-spec-main"), mMain.freq);
+  drawSpectrum($("az-spec-mixed"), mMix.freq);
+  const sc = scoreDetailed(mMix, mx.mainAnalyserL, mx.mainAnalyserR);
+  $("az-score").textContent = `Technical Mix Quality: ${sc.total} / 100 (heuristic, not a standard loudness metric)`;
+  $("az-stats").innerHTML = `<div>Peak: ${mMix.peakDb.toFixed(1)} dB</div><div>RMS: ${mMix.rmsDb.toFixed(1)} dB</div>
+    <div>Clipping: ${mMix.clipped>0?"Detected":"None"}</div><div>Dynamic Range: ${mMix.crest.toFixed(1)} dB</div>
+    <div>Low: ${mMix.low.toFixed(1)} dB</div><div>Mid: ${mMix.mid.toFixed(1)} dB</div><div>High: ${mMix.high.toFixed(1)} dB</div>
+    <div>Clipping score: ${sc.clippingScore}</div><div>Loudness (RMS): ${sc.loudnessScore}</div>
+    <div>Headroom: ${sc.headroomScore}</div><div>Dynamics: ${sc.dynamicsScore}</div>
+    <div>Spectral Balance: ${sc.spectralScore}</div><div>Stereo Balance: ${sc.stereoScore}</div>
+    <div>Main→Mixed RMS: ${(mMix.rmsDb-mMain.rmsDb).toFixed(1)} dB, Peak: ${(mMix.peakDb-mMain.peakDb).toFixed(1)} dB,
+    Low: ${(mMix.low-mMain.low).toFixed(1)} dB, Mid: ${(mMix.mid-mMain.mid).toFixed(1)} dB, High: ${(mMix.high-mMain.high).toFixed(1)} dB</div>`;
+  azRAF = requestAnimationFrame(azTick);
+}
+
+function runAnalyzer() {
+  if (azRAF) { cancelAnimationFrame(azRAF); azRAF = null; }
+  azTick();
+}
+
+function buildAnalyzerPanel() {
+  const wrap = document.createElement("div");
+  wrap.className = "panel"; wrap.style.marginTop = "12px";
+  wrap.innerHTML = `<div class="panel-head"><span class="panel-label">Mix Analyzer</span></div>
+    <div id="az-status" style="color:var(--warn);font:11px var(--ff-mono);"></div>
+    <div>Main Song</div><canvas id="az-wave-main" width="500" height="60" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <canvas id="az-spec-main" width="500" height="40" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <div>Mixed Signal</div><canvas id="az-wave-mixed" width="500" height="60" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <canvas id="az-spec-mixed" width="500" height="40" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <div>Technical Mix Score: <span id="az-score">—</span></div>
+    <div id="az-stats" style="font:11px var(--ff-mono);color:var(--text-mid);"></div>`;
+  $("mixer-master").insertAdjacentElement("afterend", wrap);
+  const btn = document.createElement("button");
+  btn.className = "mini-btn"; btn.textContent = "Analyze Mix"; btn.style.marginLeft = "8px";
+  btn.addEventListener("click", runAnalyzer);
+  document.querySelector(".mixer-modal-head").appendChild(btn);
+}
+
 function wire() {
   buildUI();
+  buildAnalyzerPanel();
   $("btn-open-mixer").addEventListener("click", openMixer);
   $("btn-close-mixer").addEventListener("click", closeMixer);
   $("mixer-backdrop").addEventListener("click", (e) => { if (e.target.id === "mixer-backdrop") closeMixer(); });

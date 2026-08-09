@@ -1,5 +1,5 @@
-/* =====================================================================
-   SIGNAL LAB — app.js
+﻿/* =====================================================================
+   SIGNAL LAB â€” app.js
    DSP visualization workbench over the PyAudioLab FastAPI backend.
 
    HARD RULE: every pixel drawn to the waveform, spectrum, spectrogram
@@ -10,14 +10,14 @@
    distortion waveshaper) evaluated on the real parameter values.
    There is NO synthetic "demo" signal and NO canned effect animation
    anywhere in this file. While a backend request is in flight the UI
-   shows a "Processing…" state instead of guessing at the result.
+   shows a "Processingâ€¦" state instead of guessing at the result.
    ===================================================================== */
 
 (() => {
 "use strict";
 
 /* --------------------------------------------------------------- *
- * 1. EFFECT METADATA — param UI schema + detail-panel routing      *
+ * 1. EFFECT METADATA â€” param UI schema + detail-panel routing      *
  * --------------------------------------------------------------- */
 
 const EQ_BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -32,7 +32,7 @@ const GROUPS = [
 const EFFECTS = {
   gain: {
     label: "Gain", tier: "Basic", detail: "generic",
-    explain: "Multiplies every sample by a constant factor. The whole trace grows or shrinks uniformly — nothing about its shape changes, only its loudness.",
+    explain: "Multiplies every sample by a constant factor. The whole trace grows or shrinks uniformly â€” nothing about its shape changes, only its loudness.",
     params: [{ key: "gain_db", type: "dial", min: -24, max: 24, step: 0.5, unit: "dB", def: 3 }],
   },
   normalize: {
@@ -61,7 +61,7 @@ const EFFECTS = {
   },
   invert: {
     label: "Phase Invert", tier: "Basic", detail: "generic",
-    explain: "Flips the sign of every sample. The waveform mirrors across the zero line — identical loudness and shape, opposite polarity.",
+    explain: "Flips the sign of every sample. The waveform mirrors across the zero line â€” identical loudness and shape, opposite polarity.",
     params: [],
   },
   trim_silence: {
@@ -74,12 +74,12 @@ const EFFECTS = {
   },
   hard_limit: {
     label: "Hard Limiter", tier: "Intermediate", detail: "generic",
-    explain: "Any sample above the threshold gets clipped flat at that ceiling — a hard wall the signal cannot cross.",
+    explain: "Any sample above the threshold gets clipped flat at that ceiling â€” a hard wall the signal cannot cross.",
     params: [{ key: "threshold_db", type: "dial", min: -24, max: 0, step: 0.5, unit: "dB", def: -6 }],
   },
   soft_clip: {
     label: "Soft Clipper", tier: "Intermediate", detail: "generic",
-    explain: "Samples approaching the threshold are rounded off with a tanh curve instead of clipped flat — gentler, with added harmonics.",
+    explain: "Samples approaching the threshold are rounded off with a tanh curve instead of clipped flat â€” gentler, with added harmonics.",
     params: [{ key: "threshold_db", type: "dial", min: -24, max: 0, step: 0.5, unit: "dB", def: -6 }],
   },
   compress: {
@@ -95,7 +95,7 @@ const EFFECTS = {
   },
   distort: {
     label: "Distortion", tier: "Stretch", detail: "distortion",
-    explain: "Pushes the signal into nonlinear territory, adding harmonics — the waveform squares off and the spectrum gains overtones.",
+    explain: "Pushes the signal into nonlinear territory, adding harmonics â€” the waveform squares off and the spectrum gains overtones.",
     params: [
       { key: "drive_db", type: "dial", min: 0, max: 36, step: 1, unit: "dB", def: 12 },
       { key: "mode", type: "seg", options: ["soft", "hard"], def: "soft" },
@@ -104,7 +104,7 @@ const EFFECTS = {
   },
   reverse: {
     label: "Reverse", tier: "Basic", detail: "generic",
-    explain: "Reads every sample back to front. The shape is identical, just played in the opposite order — watch it flip end-for-end in the waveform.",
+    explain: "Reads every sample back to front. The shape is identical, just played in the opposite order â€” watch it flip end-for-end in the waveform.",
     params: [],
   },
   delay: {
@@ -123,7 +123,7 @@ const EFFECTS = {
   },
   time_stretch: {
     label: "Time Stretch", tier: "Stretch", detail: "generic",
-    explain: "Uses a phase vocoder to compress or expand the signal in time while keeping pitch constant — length changes, tone doesn't.",
+    explain: "Uses a phase vocoder to compress or expand the signal in time while keeping pitch constant â€” length changes, tone doesn't.",
     params: [{ key: "factor", type: "dial", min: 0.25, max: 4, step: 0.05, unit: "x", def: 1.25 }],
   },
   eq: {
@@ -133,7 +133,7 @@ const EFFECTS = {
   },
   reverb: {
     label: "Schroeder Reverb", tier: "Stretch", detail: "generic",
-    explain: "Runs the signal through parallel comb filters and series allpass filters to build a dense, decaying reflection tail — visible as trailing energy after the dry signal ends.",
+    explain: "Runs the signal through parallel comb filters and series allpass filters to build a dense, decaying reflection tail â€” visible as trailing energy after the dry signal ends.",
     params: [
       { key: "room_size", type: "dial", min: 0, max: 1, step: 0.01, unit: "", def: 0.5 },
       { key: "damping", type: "dial", min: 0, max: 1, step: 0.01, unit: "", def: 0.5 },
@@ -184,8 +184,8 @@ const state = {
   sampleRate: 44100,
   duration: 0,
   channels: 1,
-  currentBuffer: null,    // AudioBuffer — last committed (base) signal
-  previewBuffer: null,    // AudioBuffer — pending live-preview signal (real backend output)
+  currentBuffer: null,    // AudioBuffer â€” last committed (base) signal
+  previewBuffer: null,    // AudioBuffer â€” pending live-preview signal (real backend output)
   previewFileId: null,
   activeEffect: null,     // key into EFFECTS
   paramValues: {},
@@ -195,7 +195,7 @@ const state = {
   isProcessing: false,
 
   // A/B + view state
-  abMode: "original",     // 'original' | 'processed' — controls playback + primary trace
+  abMode: "original",     // 'original' | 'processed' â€” controls playback + primary trace
   view: { start: 0, end: 0 },   // seconds, current waveform zoom window
   selection: null,        // { startS, endS } | null
   selectionOnly: false,
@@ -259,7 +259,7 @@ function toast(msg, type = "") {
 function setStatus(msg) { $("status-text").textContent = msg; }
 
 /* --------------------------------------------------------------- *
- * 5. FFT (radix-2, real input via Hann window) — shared by         *
+ * 5. FFT (radix-2, real input via Hann window) â€” shared by         *
  *    spectrum analyzer + spectrogram, all on real decoded PCM      *
  * --------------------------------------------------------------- */
 
@@ -433,14 +433,14 @@ const COLOR_B_STROKE = "#9b8cff";
 const COLOR_B_GLOW = "rgba(155,140,255,.55)";
 
 /* --------------------------------------------------------------- *
- * 8. WAVEFORM PANEL — real envelope, ruler, zoom, selection,       *
+ * 8. WAVEFORM PANEL â€” real envelope, ruler, zoom, selection,       *
  *    synchronized playhead                                          *
  * --------------------------------------------------------------- */
 
 function activeDisplayBuffers() {
   // "original" trace is always the last committed signal.
   // "processed" trace is the pending live preview, or (once nothing is
-  // pending) the same committed signal — never a fabricated one.
+  // pending) the same committed signal â€” never a fabricated one.
   const original = state.currentBuffer;
   const processed = state.previewBuffer || state.currentBuffer;
   return { original, processed };
@@ -601,12 +601,12 @@ function updateWaveformSub() {
   const el = $("waveform-sub");
   if (!state.currentBuffer) { el.textContent = ""; return; }
   const span = state.view.end - state.view.start;
-  el.textContent = `${span.toFixed(span < 1 ? 3 : 2)}s window · ${zoomFactor().toFixed(1)}×`;
-  $("zoom-label").textContent = `${zoomFactor().toFixed(1)}×`;
+  el.textContent = `${span.toFixed(span < 1 ? 3 : 2)}s window Â· ${zoomFactor().toFixed(1)}Ã—`;
+  $("zoom-label").textContent = `${zoomFactor().toFixed(1)}Ã—`;
 }
 
 /* --------------------------------------------------------------- *
- * 9. SPECTRUM PANEL — real FFT bars + freq/dB axes + EQ overlay    *
+ * 9. SPECTRUM PANEL â€” real FFT bars + freq/dB axes + EQ overlay    *
  * --------------------------------------------------------------- */
 
 function renderSpectrum() {
@@ -722,7 +722,7 @@ function drawEqCurveOverlay(ctx, axisPad, plotW, plotH, sr) {
 }
 
 /* --------------------------------------------------------------- *
- * 10. SPECTROGRAM PANEL — real STFT heatmap                        *
+ * 10. SPECTROGRAM PANEL â€” real STFT heatmap                        *
  * --------------------------------------------------------------- */
 
 function colorRamp(v) {
@@ -774,7 +774,7 @@ function renderSpectrogram() {
     }
     octx.putImageData(img, 0, 0);
     state.spectrogramCache = { key: cacheKey, canvas: off, meta: spec };
-    $("spectrogram-sub").textContent = `STFT ${spec.fftSize}/${spec.hopSize} · ${spec.durationS.toFixed(1)}s`;
+    $("spectrogram-sub").textContent = `STFT ${spec.fftSize}/${spec.hopSize} Â· ${spec.durationS.toFixed(1)}s`;
   }
 
   spectrogramCtx.imageSmoothingEnabled = true;
@@ -795,7 +795,7 @@ function renderSpectrogram() {
 }
 
 /* --------------------------------------------------------------- *
- * 11. METERS PANEL — real peak/RMS, L/R, clipping, dBFS            *
+ * 11. METERS PANEL â€” real peak/RMS, L/R, clipping, dBFS            *
  * --------------------------------------------------------------- */
 
 function buildMetersDom(numChannels) {
@@ -814,7 +814,7 @@ function buildMetersDom(numChannels) {
         <div class="meter-peak-hold" style="bottom:0%"></div>
       </div>
       <div class="meter-clip"></div>
-      <div class="meter-readout"><b class="mr-peak">-∞</b><br>pk<br><b class="mr-rms">-∞</b><br>rms</div>
+      <div class="meter-readout"><b class="mr-peak">-âˆž</b><br>pk<br><b class="mr-rms">-âˆž</b><br>rms</div>
     `;
     body.appendChild(ch);
   });
@@ -835,8 +835,8 @@ function setMeterChannel(labEl, peakDbVal, rmsDbVal) {
   fillRms.style.height = dbToPct(rmsDbVal) + "%";
   hold.style.bottom = dbToPct(peakDbVal) + "%";
   clip.classList.toggle("on", peakDbVal >= -0.15);
-  mrPeak.textContent = peakDbVal <= -99 ? "-∞" : peakDbVal.toFixed(1);
-  mrRms.textContent = rmsDbVal <= -99 ? "-∞" : rmsDbVal.toFixed(1);
+  mrPeak.textContent = peakDbVal <= -99 ? "-âˆž" : peakDbVal.toFixed(1);
+  mrRms.textContent = rmsDbVal <= -99 ? "-âˆž" : rmsDbVal.toFixed(1);
 }
 
 function renderStaticMeters() {
@@ -858,6 +858,7 @@ function ensureAudioGraph() {
   if (state.mediaSource) return;
   const ctx = ac();
   const source = ctx.createMediaElementSource(state.htmlAudio);
+  window.signalLabMainSongSource = source;
   const splitter = ctx.createChannelSplitter(2);
   const analyserL = ctx.createAnalyser();
   const analyserR = ctx.createAnalyser();
@@ -870,6 +871,9 @@ function ensureAudioGraph() {
   state.mediaSource = source;
   state.analyserL = analyserL;
   state.analyserR = analyserR;
+  window.signalLabMainSongAnalyser = analyserL;
+  window.signalLabMainAudioEl = state.htmlAudio;
+  window.signalLabMainSongAnalyserR = analyserR;
 }
 
 function liveMeterLoop() {
@@ -891,7 +895,7 @@ function liveMeterLoop() {
 }
 
 /* --------------------------------------------------------------- *
- * 12. EFFECT DETAIL PANEL — analytic transfer curves (exact match  *
+ * 12. EFFECT DETAIL PANEL â€” analytic transfer curves (exact match  *
  *     to backend DSP formulas) + real before/after stats           *
  * --------------------------------------------------------------- */
 
@@ -984,13 +988,13 @@ function renderCompressorDetail(w, h, key) {
   detailCtx.shadowColor = "rgba(155,140,255,.6)"; detailCtx.shadowBlur = 5;
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
-  let grStat = "—";
+  let grStat = "â€”";
   if (state.previewBuffer && state.currentBuffer) {
     const before = rmsDb(monoOf(state.currentBuffer));
     const after = rmsDb(monoOf(state.previewBuffer));
     grStat = (after - before).toFixed(1) + " dB";
   }
-  $("detail-stats").innerHTML = `<span>threshold: <b>${threshold} dB</b></span><span>ratio: <b>${ratio}:1</b></span><span>measured level Δ: <b>${grStat}</b></span>`;
+  $("detail-stats").innerHTML = `<span>threshold: <b>${threshold} dB</b></span><span>ratio: <b>${ratio}:1</b></span><span>measured level Î”: <b>${grStat}</b></span>`;
 }
 
 function renderDistortionDetail(w, h, key) {
@@ -1023,7 +1027,7 @@ function renderDistortionDetail(w, h, key) {
   detailCtx.shadowColor = "rgba(255,138,138,.55)"; detailCtx.shadowBlur = 5;
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
-  let harmStat = "—";
+  let harmStat = "â€”";
   if (state.previewBuffer && state.currentBuffer) {
     const before = computeSpectrum(monoOf(state.currentBuffer), state.currentBuffer.sampleRate, 48);
     const after = computeSpectrum(monoOf(state.previewBuffer), state.previewBuffer.sampleRate, 48);
@@ -1073,9 +1077,9 @@ function renderGenericDetail(w, h, key) {
   const rB = rmsDb(bMono).toFixed(1), rA = rmsDb(aMono).toFixed(1);
   const durB = before.duration.toFixed(2), durA = after.duration.toFixed(2);
   $("detail-stats").innerHTML =
-    `<span>peak: <b>${pB}→${pA} dB</b></span>` +
-    `<span>rms: <b>${rB}→${rA} dB</b></span>` +
-    (Math.abs(before.duration - after.duration) > 0.01 ? `<span>duration: <b>${durB}s→${durA}s</b></span>` : "");
+    `<span>peak: <b>${pB}â†’${pA} dB</b></span>` +
+    `<span>rms: <b>${rB}â†’${rA} dB</b></span>` +
+    (Math.abs(before.duration - after.duration) > 0.01 ? `<span>duration: <b>${durB}sâ†’${durA}s</b></span>` : "");
 }
 
 /* --------------------------------------------------------------- *
@@ -1174,7 +1178,7 @@ function renderParamControls(eff, key) {
   if (eff.params.length === 0) {
     const p = document.createElement("p");
     p.style.cssText = "color:var(--text-dim);font-size:12px;margin:0;";
-    p.textContent = "No parameters — this module transforms the whole signal the same way every time.";
+    p.textContent = "No parameters â€” this module transforms the whole signal the same way every time.";
     wrap.appendChild(p);
     return;
   }
@@ -1368,9 +1372,9 @@ async function runLivePreview() {
     const params = { ...state.paramValues[key] };
     const selection = getSelectionPayload();
     const meta = await apiApplyEffect(baseFileId, key, params, selection);
-    if (gen !== state.requestGen) return; // superseded by a newer parameter change — discard
+    if (gen !== state.requestGen) return; // superseded by a newer parameter change â€” discard
     const buffer = await decodeFileId(meta.file_id);
-    if (gen !== state.requestGen) return; // superseded while decoding — discard
+    if (gen !== state.requestGen) return; // superseded while decoding â€” discard
 
     state.previewFileId = meta.file_id;
     state.previewBuffer = buffer;
@@ -1395,7 +1399,7 @@ async function runLivePreview() {
 async function applyCurrentEffect() {
   const key = state.activeEffect;
   if (!key) return;
-  setStatus(`Applying ${EFFECTS[key].label}…`);
+  setStatus(`Applying ${EFFECTS[key].label}â€¦`);
   setProcessing(true);
   try {
     let fileId, buffer;
@@ -1490,7 +1494,7 @@ async function loadFromUploadResponse(meta, buffer) {
 }
 
 async function handleFile(file) {
-  setStatus("Uploading…");
+  setStatus("Uploadingâ€¦");
   try {
     const meta = await apiUpload(file);
     const buffer = await decodeFileId(meta.file_id);
@@ -1503,7 +1507,7 @@ async function handleFile(file) {
 }
 
 async function loadSample(name) {
-  setStatus("Loading sample…");
+  setStatus("Loading sampleâ€¦");
   try {
     const res = await fetch(`sample_wavs/${name}`);
     const blob = await res.blob();
@@ -1528,7 +1532,7 @@ function fmtTime(s) {
 
 function updateHeaderMeta() {
   $("status-meta").textContent = state.currentBuffer
-    ? `${state.sampleRate} Hz · ${state.channels === 2 ? "stereo" : "mono"} · ${fmtTime(state.duration)}`
+    ? `${state.sampleRate} Hz Â· ${state.channels === 2 ? "stereo" : "mono"} Â· ${fmtTime(state.duration)}`
     : "";
   $("tp-duration").textContent = fmtTime(state.duration);
 }
@@ -1601,9 +1605,9 @@ function updateSelectionUI() {
   $("btn-clear-selection").hidden = !hasSel;
   if (hasSel) {
     const d = state.selection.endS - state.selection.startS;
-    $("selection-text").textContent = `${fmtTime(state.selection.startS)} → ${fmtTime(state.selection.endS)} (${d.toFixed(2)}s)`;
+    $("selection-text").textContent = `${fmtTime(state.selection.startS)} â†’ ${fmtTime(state.selection.endS)} (${d.toFixed(2)}s)`;
   } else {
-    $("selection-text").textContent = "No selection · drag on waveform to select";
+    $("selection-text").textContent = "No selection Â· drag on waveform to select";
   }
 }
 
@@ -1775,3 +1779,4 @@ function wire() {
 wire();
 setStatus("Ready.");
 })();
+
