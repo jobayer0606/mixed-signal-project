@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Lab — DSP Visualization Workbench</title>
+<link rel="stylesheet" href="style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<input type="file" id="file-input" accept=".wav,.mp3,audio/wav,audio/mp3,audio/mpeg" hidden>
+
+<div class="app" id="app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app-header">
+    <div class="brand">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <path d="M1 13 Q4 4, 7 13 T13 13 T19 13 T25 13" stroke="var(--trace-a)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">SIGNAL LAB</span>
+        <span class="brand-tag">real-time DSP laboratory</span>
+      </div>
+    </div>
+
+    <div class="header-file" id="header-file">
+      <span class="file-dot" id="file-dot"></span>
+      <span id="header-filename">No signal loaded</span>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-ghost" id="btn-open" title="Open audio file">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Open
+      </button>
+      <button class="btn btn-ghost" id="btn-samples" title="Try a sample">Samples ▾
+        <div class="sample-menu" id="sample-menu">
+          <div class="sample-item" data-sample="test_sine_mono.wav">Mono sine tone</div>
+          <div class="sample-item" data-sample="test_sine_stereo.wav">Stereo sine tone</div>
+          <div class="sample-item" data-sample="test_dynamic.wav">Dynamic range demo</div>
+          <div class="sample-item" data-sample="test_noise.wav">Noise sample</div>
+          <div class="sample-item" data-sample="test_silence.wav">Silence + tone</div>
+        </div>
+      </button>
+      <button class="btn btn-ghost" id="btn-open-mixer" title="Concert Sound Mixer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V10M4 6V3M12 21v-6M12 11V3M20 21v-4M20 13V3"/><circle cx="4" cy="8" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="20" cy="15" r="2"/></svg>
+        Mixer
+      </button>
+      <button class="btn btn-solid" id="btn-export" disabled title="Download processed WAV">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ BODY GRID ============ -->
+  <div class="app-body">
+
+    <!-- ============ LEFT RAIL: MODULE RACK ============ -->
+    <nav class="rack" id="rack">
+      <div class="rack-empty" id="rack-empty">Load a signal to enable modules</div>
+      <!-- module groups injected by JS -->
+    </nav>
+
+    <!-- ============ CENTER: HERO VISUALIZATION ============ -->
+    <main class="stage">
+
+      <!-- Drop zone / empty state -->
+      <div class="dropzone" id="dropzone">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2 L12 15 M12 2 L7 7 M12 2 L17 7"/><path d="M4 15 v4 a2 2 0 0 0 2 2 h12 a2 2 0 0 0 2 -2 v-4"/></svg>
+        <p class="dz-title">Drop a WAV or MP3 to begin</p>
+        <p class="dz-sub">or click Open, or try a sample from the header</p>
+      </div>
+
+      <!-- Visualization stack (hidden until a file is loaded) -->
+      <div class="viz-stack" id="viz-stack" hidden>
+
+        <!-- Toolbar: A/B, zoom, selection -->
+        <div class="viz-toolbar">
+          <div class="ab-switch" id="ab-switch">
+            <button class="ab-opt active" data-mode="original">Original</button>
+            <button class="ab-opt" data-mode="processed">Processed</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="zoom-controls">
+            <button class="mini-btn" id="btn-zoom-out" title="Zoom out">−</button>
+            <span class="zoom-label" id="zoom-label">1.0×</span>
+            <button class="mini-btn" id="btn-zoom-in" title="Zoom in">+</button>
+            <button class="mini-btn" id="btn-zoom-fit" title="Fit to window">Fit</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="selection-info" id="selection-info">
+            <span id="selection-text">No selection · drag on waveform to select</span>
+            <button class="mini-btn" id="btn-clear-selection" hidden>Clear</button>
+          </div>
+          <div class="toolbar-spacer"></div>
+          <div class="processing-indicator" id="processing-indicator" hidden>
+            <span class="spinner"></span> Processing…
+          </div>
+        </div>
+
+        <!-- HERO: waveform -->
+        <div class="panel waveform-panel">
+          <div class="panel-head">
+            <span class="panel-label">Waveform</span>
+            <div class="trace-legend">
+              <span class="legend-item"><i class="swatch swatch-a"></i>original</span>
+              <span class="legend-item"><i class="swatch swatch-b"></i>processed</span>
+            </div>
+            <span class="panel-sub" id="waveform-sub"></span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="waveform-canvas"></canvas>
+            <div class="panel-overlay" id="waveform-overlay" hidden><span class="spinner"></span> Processing…</div>
+          </div>
+          <div class="ruler-wrap"><canvas id="ruler-canvas"></canvas></div>
+        </div>
+
+        <!-- Secondary row: spectrum / spectrogram / meters -->
+        <div class="viz-row">
+          <div class="panel spectrum-panel">
+            <div class="panel-head">
+              <span class="panel-label">Spectrum (FFT)</span>
+              <span class="panel-sub">20 Hz – 20 kHz · dB</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="spectrum-canvas"></canvas>
+              <div class="panel-overlay" id="spectrum-overlay" hidden><span class="spinner"></span> Processing…</div>
+            </div>
+          </div>
+
+          <div class="panel spectrogram-panel">
+            <div class="panel-head">
+              <span class="panel-label">Spectrogram</span>
+              <span class="panel-sub" id="spectrogram-sub">STFT</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="spectrogram-canvas"></canvas>
+              <div class="panel-overlay" id="spectrogram-overlay" hidden><span class="spinner"></span> Processing…</div>
+            </div>
+          </div>
+
+          <div class="panel meters-panel">
+            <div class="panel-head">
+              <span class="panel-label">Meters</span>
+              <span class="panel-sub" id="meters-source">static</span>
+            </div>
+            <div class="meters-body" id="meters-body"><!-- injected --></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Transport -->
+      <div class="transport" id="transport" hidden>
+        <button class="tp-btn" id="tp-play" title="Play / pause">
+          <svg id="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+          <svg id="icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+        </button>
+        <span class="tp-time" id="tp-time">00:00.000</span>
+        <input type="range" id="tp-seek" class="tp-seek" min="0" max="1000" value="0" step="1">
+        <span class="tp-time tp-time-dim" id="tp-duration">00:00.000</span>
+        <label class="tp-compare">
+          <input type="checkbox" id="tp-selection-only">
+          <span>preview selection only</span>
+        </label>
+      </div>
+
+    </main>
+
+    <!-- ============ RIGHT RAIL: PARAMETERS ============ -->
+    <aside class="params" id="params">
+      <div class="params-empty" id="params-empty">
+        <p>Pick a module from the rack to see its controls and a live, data-accurate view of what it does to the signal.</p>
+      </div>
+
+      <div class="params-active" id="params-active" hidden>
+        <div class="params-head">
+          <span class="params-title" id="params-title">Effect</span>
+          <span class="params-tier" id="params-tier">Tier 1</span>
+        </div>
+        <p class="params-explain" id="params-explain"></p>
+
+        <div class="detail-panel" id="detail-panel">
+          <div class="detail-head" id="detail-head">Effect detail</div>
+          <canvas id="detail-canvas" height="120"></canvas>
+          <div class="detail-stats" id="detail-stats"></div>
+        </div>
+
+        <div class="params-controls" id="params-controls"><!-- dials injected here --></div>
+
+        <label class="live-toggle">
+          <input type="checkbox" id="live-preview-toggle" checked>
+          <span>Live preview</span>
+          <i class="live-dot" id="live-dot"></i>
+        </label>
+
+        <div class="params-actions">
+          <button class="btn btn-ghost" id="btn-cancel-effect">Cancel</button>
+          <button class="btn btn-solid" id="btn-apply-effect">Apply to signal</button>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ============ STATUS BAR ============ -->
+  <footer class="status-bar">
+    <span id="status-text">Ready.</span>
+    <span class="status-right" id="status-meta"></span>
+  </footer>
+
+</div>
+
+<!-- ============ CONCERT SOUND MIXER (self-contained, additive feature) ============ -->
+<div class="mixer-backdrop" id="mixer-backdrop" hidden>
+  <div class="mixer-modal panel">
+    <div class="mixer-modal-head">
+      <span class="panel-label">Concert Sound Mixer</span>
+      <span class="panel-sub">5 channels · 3-band EQ · Main / Monitor routing</span>
+      <button class="mini-btn" id="btn-close-mixer" title="Close" style="margin-left:auto;">✕</button>
+    </div>
+
+    <div class="mixer-transport">
+      <button class="tp-btn" id="mx-play" title="Play / stop all channels">
+        <svg id="mx-icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+        <svg id="mx-icon-stop" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="5" y="5" width="14" height="14"/></svg>
+      </button>
+      <span id="mx-transport-label" style="font:12px var(--ff-mono);color:var(--text-mid);">Stopped · loops the 5 built-in sample inputs</span>
+    </div>
+
+    <div class="mixer-channels" id="mixer-channels"><!-- channel strips injected by mixer.js --></div>
+
+    <div class="mixer-master" id="mixer-master"><!-- Main / Monitor bus strips injected by mixer.js --></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+<script src="mixer.js"></script>
+</body>
+</html>
