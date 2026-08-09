@@ -369,3 +369,28 @@ input{ font:inherit; }
 .listen-btn{ margin-left:auto; font:700 10px var(--ff-mono); padding:5px 10px; border-radius:999px; background:var(--bg-raised); border:1px solid var(--hairline-soft); color:var(--text-mid); cursor:pointer; }
 .listen-btn.active{ background:var(--trace-b); border-color:var(--trace-b); color:#0d0620; }
 .bus-strip .mixer-meter-row .meter-track{ height:56px; }
+
+/* ---- Dynamic tracks: "+ Add Track" tile + per-channel loading/error status ---- */
+.mixer-add-track{
+  position:relative;
+  align-items:center;
+  justify-content:flex-start;
+  border-style:dashed;
+  border-color:var(--hairline);
+  background:transparent;
+}
+.mixer-add-track-btn{ width:100%; justify-content:center; }
+.mixer-add-track-panel{
+  position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:60;
+  background:var(--bg-raised); border:1px solid var(--hairline);
+  border-radius:var(--radius-md); padding:10px;
+  display:flex; flex-direction:column; gap:8px;
+  box-shadow:0 12px 28px rgba(0,0,0,.45);
+}
+.mixer-add-track-presets{ display:flex; flex-wrap:wrap; gap:6px; }
+.mixer-preset-btn{ width:auto; padding:0 10px; font:600 11px var(--ff-mono); }
+.mixer-upload-btn{ width:100%; justify-content:center; cursor:pointer; }
+
+.mixer-channel-status{ font:600 10px var(--ff-mono); min-height:12px; }
+.mixer-channel-status.loading{ color:var(--warn); }
+.mixer-channel-status.error{ color:var(--danger); overflow-wrap:anywhere; }

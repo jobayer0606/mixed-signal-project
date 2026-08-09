@@ -22,13 +22,17 @@
 
 const $ = (id) => document.getElementById(id);
 
-const CHANNELS = [
-  { id: "vocals",   name: "Vocals",   src: "test_dynamic.wav" },
-  { id: "guitar",   name: "Guitar",   src: "test_sine_mono.wav" },
-  { id: "drums",    name: "Drums",    src: "test_noise.wav" },
-  { id: "bass",     name: "Bass",     src: "test_sine_stereo.wav" },
-  { id: "keyboard", name: "Keyboard", src: "test_silence.wav" },
+const DEFAULT_TRACKS = [
+  { id: "vocals", name: "Vocals", kind: "preset", src: "vocal.mp3" },
+  { id: "guitar", name: "Guitar", kind: "preset", src: "guitar.mp3" },
+  { id: "drums",  name: "Drums",  kind: "preset", src: "drum.mp3" },
+  { id: "bass",   name: "Bass",   kind: "preset", src: "bass.mp3" },
+  { id: "piano",  name: "Piano",  kind: "preset", src: "piano.mp3" },
 ];
+
+// Catalog offered in the "+ Add Track" preset picker — reuses the same
+// bundled sample_wavs already shipped for the 5 default tracks above.
+const SAMPLE_CATALOG = DEFAULT_TRACKS.map((t) => ({ name: t.name, src: t.src }));
 
 const mx = {
   ctx: null,
@@ -39,7 +43,8 @@ const mx = {
   mainAnalyser: null,
   monitorAnalyser: null,
   channels: {},              // id -> channel runtime object
-  buffersLoaded: false,
+  tracks: [],                // dynamic list of track descriptors ({id, name, kind, src|file})
+  trackSeq: 0,                // counter for generating unique ids for added tracks
   meterRAF: null,
 };
 
@@ -86,16 +91,40 @@ function applyListenRouting() {
   else mx.monitorBusGain.connect(ac().destination);
 }
 
-async function loadBuffers() {
-  if (mx.buffersLoaded) return;
+async function loadTrackBuffer(t) {
   const ctx = ac();
-  await Promise.all(CHANNELS.map(async (c) => {
-    const res = await fetch(`sample_wavs/${c.src}`);
-    const arr = await res.arrayBuffer();
-    const buffer = await ctx.decodeAudioData(arr.slice(0));
-    mx.channels[c.id].buffer = buffer;
+  const ch = mx.channels[t.id];
+  ch.loading = true;
+  ch.error = null;
+  updateChannelLoadingUI(t.id);
+  try {
+    let arrayBuf;
+    if (t.kind === "upload") {
+      arrayBuf = await t.file.arrayBuffer();
+    } else {
+      const res = await fetch(`sample_wavs/${t.src}`);
+      if (!res.ok) throw new Error(`could not fetch sample (${res.status})`);
+      arrayBuf = await res.arrayBuffer();
+    }
+    const buffer = await ctx.decodeAudioData(arrayBuf.slice(0));
+    ch.buffer = buffer;
+    ch.loading = false;
+    updateChannelLoadingUI(t.id);
+    return buffer;
+  } catch (err) {
+    ch.loading = false;
+    ch.error = (err && err.message) ? err.message : "failed to decode audio";
+    updateChannelLoadingUI(t.id);
+    throw err;
+  }
+}
+
+async function loadAllBuffers() {
+  await Promise.all(mx.tracks.map(async (t) => {
+    const ch = mx.channels[t.id];
+    if (ch.buffer || ch.loading) return;
+    try { await loadTrackBuffer(t); } catch (_) { /* left silent; error is shown in its own strip */ }
   }));
-  mx.buffersLoaded = true;
 }
 
 function buildChannelGraph(id) {
@@ -117,23 +146,30 @@ function buildChannelGraph(id) {
   return { low, mid, high, pan, volGain, monitorSendGain, analyser, source: null };
 }
 
-function initChannelState() {
-  CHANNELS.forEach((c) => {
-    mx.channels[c.id] = {
-      meta: c,
-      buffer: null,
-      graph: null,
-      volume: 0.85,
-      pan: 0,
-      eq: { low: 0, mid: 0, high: 0 },
-      monitorSend: 0.3,
-      muted: false,
-      solo: false,
-    };
-  });
+function registerTrackState(t) {
+  mx.tracks.push(t);
+  mx.channels[t.id] = {
+    meta: t,
+    buffer: null,
+    graph: null,
+    volume: 0.85,
+    pan: 0,
+    eq: { low: 0, mid: 0, high: 0 },
+    monitorSend: 0.3,
+    muted: false,
+    solo: false,
+    loading: false,
+    error: null,
+  };
 }
 
-function anySolo() { return CHANNELS.some((c) => mx.channels[c.id].solo); }
+function initChannelState() {
+  mx.tracks = [];
+  mx.channels = {};
+  DEFAULT_TRACKS.forEach((t) => registerTrackState(t));
+}
+
+function anySolo() { return mx.tracks.some((c) => mx.channels[c.id].solo); }
 
 function applyChannelGain(id) {
   const ch = mx.channels[id];
@@ -143,33 +179,37 @@ function applyChannelGain(id) {
   ch.graph.volGain.gain.setTargetAtTime(effectiveVol, ac().currentTime, 0.01);
 }
 
-function applyAllChannelGains() { CHANNELS.forEach((c) => applyChannelGain(c.id)); }
+function applyAllChannelGains() { mx.tracks.forEach((c) => applyChannelGain(c.id)); }
 
 /* ---------------- transport ---------------- */
 
 async function startMixer() {
-  await loadBuffers();
+  await loadAllBuffers();
   ensureBuses();
   await ac().resume();
-  CHANNELS.forEach((c) => {
-    const ch = mx.channels[c.id];
-    if (!ch.graph) ch.graph = buildChannelGraph(c.id);
-    const src = ac().createBufferSource();
-    src.buffer = ch.buffer;
-    src.loop = true;
-    src.connect(ch.graph.low);
-    src.start();
-    ch.graph.source = src;
-  });
+  mx.tracks.forEach((t) => startTrackPlayback(t));
   applyAllChannelGains();
   mx.playing = true;
   updateTransportUI();
   if (!mx.meterRAF) mx.meterRAF = requestAnimationFrame(meterLoop);
 }
 
+function startTrackPlayback(t) {
+  const ch = mx.channels[t.id];
+  if (!ch || !ch.buffer) return; // not decoded yet, or failed to decode
+  if (!ch.graph) ch.graph = buildChannelGraph(t.id);
+  if (ch.graph.source) return; // already playing
+  const src = ac().createBufferSource();
+  src.buffer = ch.buffer;
+  src.loop = true;
+  src.connect(ch.graph.low);
+  src.start();
+  ch.graph.source = src;
+}
+
 function stopMixer() {
-  CHANNELS.forEach((c) => {
-    const ch = mx.channels[c.id];
+  mx.tracks.forEach((t) => {
+    const ch = mx.channels[t.id];
     if (ch.graph && ch.graph.source) {
       try { ch.graph.source.stop(); } catch (_) {}
       try { ch.graph.source.disconnect(); } catch (_) {}
@@ -183,9 +223,10 @@ function stopMixer() {
 function updateTransportUI() {
   $("mx-icon-play").hidden = mx.playing;
   $("mx-icon-stop").hidden = !mx.playing;
+  const n = mx.tracks.length;
   $("mx-transport-label").textContent = mx.playing
-    ? "Playing · 5 channels looping into the mix"
-    : "Stopped · loops the 5 built-in sample inputs";
+    ? `Playing · ${n} channel${n === 1 ? "" : "s"} looping into the mix`
+    : "Stopped · loops the built-in sample inputs (add tracks below)";
 }
 
 /* ---------------- generic UI builders (reuse existing classes) ---------------- */
@@ -282,7 +323,10 @@ function buildChannelStrip(c) {
   const strip = document.createElement("div");
   strip.className = "mixer-channel";
 
-  strip.innerHTML = `<div class="mixer-channel-name">${c.name}</div><div class="mixer-channel-src">loop: ${c.src}</div>`;
+  const srcLabel = c.kind === "upload" ? "uploaded file" : `loop: ${c.src}`;
+  strip.innerHTML = `<div class="mixer-channel-name">${escapeHtml(c.name)}</div><div class="mixer-channel-src">${srcLabel}</div><div class="mixer-channel-status" data-role="status"></div>`;
+  ch.statusEl = strip.querySelector('[data-role="status"]');
+  updateChannelLoadingUI(c.id);
 
   const btnRow = document.createElement("div");
   btnRow.className = "mx-btn-row";
@@ -365,7 +409,7 @@ function refreshListenButtons() {
 /* ---------------- meter animation loop ---------------- */
 
 function meterLoop() {
-  CHANNELS.forEach((c) => {
+  mx.tracks.forEach((c) => {
     const ch = mx.channels[c.id];
     if (!ch.graph || !ch.meterEl) return;
     const buf = new Float32Array(ch.graph.analyser.fftSize);
@@ -385,12 +429,124 @@ function meterLoop() {
   mx.meterRAF = requestAnimationFrame(meterLoop);
 }
 
+/* ---------------- dynamic track management (Add Track) ---------------- */
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function slugify(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "track";
+}
+
+function uniqueTrackId(base) {
+  mx.trackSeq += 1;
+  return `${base}-${mx.trackSeq}`;
+}
+
+function updateChannelLoadingUI(id) {
+  const ch = mx.channels[id];
+  if (!ch || !ch.statusEl) return;
+  if (ch.loading) {
+    ch.statusEl.textContent = "Decoding…";
+    ch.statusEl.className = "mixer-channel-status loading";
+  } else if (ch.error) {
+    ch.statusEl.textContent = `Error: ${ch.error}`;
+    ch.statusEl.className = "mixer-channel-status error";
+  } else {
+    ch.statusEl.textContent = "";
+    ch.statusEl.className = "mixer-channel-status";
+  }
+}
+
+function addTrackToUI(t) {
+  registerTrackState(t);
+  const channelsWrap = $("mixer-channels");
+  const addTile = $("mixer-add-track-tile");
+  const strip = buildChannelStrip(t);
+  if (addTile) channelsWrap.insertBefore(strip, addTile);
+  else channelsWrap.appendChild(strip);
+}
+
+async function addPresetTrack(preset) {
+  const t = { id: uniqueTrackId(slugify(preset.name)), name: preset.name, kind: "preset", src: preset.src };
+  addTrackToUI(t);
+  try {
+    await loadTrackBuffer(t);
+    if (mx.playing) { startTrackPlayback(t); applyChannelGain(t.id); }
+  } catch (_) {
+    // Decode/fetch failure — already surfaced in the channel strip via updateChannelLoadingUI.
+  }
+}
+
+async function addUploadTrack(file) {
+  const t = { id: uniqueTrackId("upload"), name: file.name, kind: "upload", file };
+  addTrackToUI(t);
+  try {
+    await loadTrackBuffer(t);
+    if (mx.playing) { startTrackPlayback(t); applyChannelGain(t.id); }
+  } catch (_) {
+    // Decode failure — already surfaced in the channel strip via updateChannelLoadingUI.
+  }
+}
+
+function buildAddTrackTile() {
+  const tile = document.createElement("div");
+  tile.className = "mixer-channel mixer-add-track";
+  tile.id = "mixer-add-track-tile";
+  tile.innerHTML = `
+    <button type="button" class="btn btn-ghost mixer-add-track-btn" id="btn-add-track">+ Add Track</button>
+    <div class="mixer-add-track-panel" id="mixer-add-track-panel" hidden>
+      <div class="mixer-row-label">Add sample instrument</div>
+      <div class="mixer-add-track-presets" id="mixer-add-track-presets"></div>
+      <div class="mixer-row-label">Or upload audio</div>
+      <label class="btn btn-ghost mixer-upload-btn" for="mixer-track-file-input">Upload WAV / MP3</label>
+      <input type="file" id="mixer-track-file-input" accept=".wav,.mp3,audio/wav,audio/mpeg" hidden>
+    </div>
+  `;
+
+  const toggleBtn = tile.querySelector("#btn-add-track");
+  const panel = tile.querySelector("#mixer-add-track-panel");
+  const presetsWrap = tile.querySelector("#mixer-add-track-presets");
+  const fileInput = tile.querySelector("#mixer-track-file-input");
+
+  SAMPLE_CATALOG.forEach((preset) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mini-btn mixer-preset-btn";
+    b.textContent = preset.name;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      addPresetTrack(preset);
+      panel.hidden = true;
+    });
+    presetsWrap.appendChild(b);
+  });
+
+  toggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  tile.addEventListener("click", (e) => e.stopPropagation());
+
+  fileInput.addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) addUploadTrack(f);
+    fileInput.value = "";
+    panel.hidden = true;
+  });
+
+  return tile;
+}
+
 /* ---------------- build UI once ---------------- */
 
 function buildUI() {
   initChannelState();
   const channelsWrap = $("mixer-channels");
-  CHANNELS.forEach((c) => channelsWrap.appendChild(buildChannelStrip(c)));
+  channelsWrap.innerHTML = "";
+  mx.tracks.forEach((t) => channelsWrap.appendChild(buildChannelStrip(t)));
+  channelsWrap.appendChild(buildAddTrackTile());
 
   const masterWrap = $("mixer-master");
   mainBusUI = buildBusStrip("main", "Main Speakers", () => mx.mainBusGain);
@@ -416,6 +572,10 @@ function wire() {
   $("mixer-backdrop").addEventListener("click", (e) => { if (e.target.id === "mixer-backdrop") closeMixer(); });
   $("mx-play").addEventListener("click", () => {
     if (mx.playing) stopMixer(); else startMixer();
+  });
+  document.addEventListener("click", () => {
+    const panel = $("mixer-add-track-panel");
+    if (panel) panel.hidden = true;
   });
 }
 
