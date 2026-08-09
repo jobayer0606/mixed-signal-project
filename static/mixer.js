@@ -8,13 +8,12 @@
    .meter-*, .btn, .mini-btn) so the mixer looks and behaves like the
    rest of the app without touching any existing file's logic.
 
-   5 fixed channels (Vocals, Guitar, Drums, Bass, Keyboard), each with:
+   Dynamic channels (Vocals, Guitar, Drums, Bass, Piano + added tracks), each with:
      Volume, Mute, Solo, Pan, 3-band EQ (Low/Mid/High), Monitor send.
    2 output buses: Main Speakers, Stage Monitors — each with its own
    master fader + level meter. Browsers only expose one physical audio
    output by default, so a "Listening to" toggle picks which bus is
-   actually audible at any moment; both buses mix and meter live
-   regardless, exactly like a real console's PFL/bus metering.
+   actually audible at any moment; both buses mix and meter live.
    ===================================================================== */
 
 (() => {
@@ -30,22 +29,23 @@ const DEFAULT_TRACKS = [
   { id: "piano",  name: "Piano",  kind: "preset", src: "piano.mp3" },
 ];
 
-// Catalog offered in the "+ Add Track" preset picker — reuses the same
-// bundled sample_wavs already shipped for the 5 default tracks above.
 const SAMPLE_CATALOG = DEFAULT_TRACKS.map((t) => ({ name: t.name, src: t.src }));
 
 const mx = {
   ctx: null,
   playing: false,
-  listen: "main",           // 'main' | 'monitor'
+  listen: "main",
   mainBusGain: null,
   monitorBusGain: null,
   mainAnalyser: null,
   monitorAnalyser: null,
-  channels: {},              // id -> channel runtime object
-  tracks: [],                // dynamic list of track descriptors ({id, name, kind, src|file})
-  trackSeq: 0,                // counter for generating unique ids for added tracks
+  channels: {},
+  tracks: [],
+  trackSeq: 0,
   meterRAF: null,
+  exportDestination: null,
+  exportRecorder: null,
+  exportChunks: [],
 };
 
 function ac() {
@@ -53,9 +53,6 @@ function ac() {
   return mx.ctx;
 }
 
-/* ---------------- small local DSP-metering helpers (mirrors the ---
- * math the main app already uses for its meters; duplicated here in
- * a few lines rather than reaching into app.js's closed module). --- */
 function peakDb(samples) {
   let peak = 0;
   for (let i = 0; i < samples.length; i++) { const a = Math.abs(samples[i]); if (a > peak) peak = a; }
@@ -68,8 +65,6 @@ function rmsDb(samples) {
   return 20 * Math.log10(Math.max(Math.sqrt(sum / samples.length), 1e-9));
 }
 function dbToPct(db) { return Math.max(0, Math.min(100, ((db + 60) / 60) * 100)); }
-
-/* ---------------- audio graph ---------------- */
 
 function ensureBuses() {
   if (mx.mainBusGain) return;
@@ -123,7 +118,7 @@ async function loadAllBuffers() {
   await Promise.all(mx.tracks.map(async (t) => {
     const ch = mx.channels[t.id];
     if (ch.buffer || ch.loading) return;
-    try { await loadTrackBuffer(t); } catch (_) { /* left silent; error is shown in its own strip */ }
+    try { await loadTrackBuffer(t); } catch (_) {}
   }));
 }
 
@@ -181,8 +176,6 @@ function applyChannelGain(id) {
 
 function applyAllChannelGains() { mx.tracks.forEach((c) => applyChannelGain(c.id)); }
 
-/* ---------------- transport ---------------- */
-
 async function startMixer() {
   await loadAllBuffers();
   ensureBuses();
@@ -196,9 +189,9 @@ async function startMixer() {
 
 function startTrackPlayback(t) {
   const ch = mx.channels[t.id];
-  if (!ch || !ch.buffer) return; // not decoded yet, or failed to decode
+  if (!ch || !ch.buffer) return;
   if (!ch.graph) ch.graph = buildChannelGraph(t.id);
-  if (ch.graph.source) return; // already playing
+  if (ch.graph.source) return;
   const src = ac().createBufferSource();
   src.buffer = ch.buffer;
   src.loop = true;
@@ -229,7 +222,99 @@ function updateTransportUI() {
     : "Stopped · loops the built-in sample inputs (add tracks below)";
 }
 
-/* ---------------- generic UI builders (reuse existing classes) ---------------- */
+/* ---------------- final-mix browser export ---------------- */
+
+function getSupportedRecorderMimeType() {
+  if (!window.MediaRecorder) return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function ensureExportDestination() {
+  ensureBuses();
+  if (!mx.exportDestination) {
+    mx.exportDestination = ac().createMediaStreamDestination();
+    // This taps the existing Main bus. It does not replace or reroute the
+    // existing destination, so normal playback remains untouched.
+    mx.mainBusGain.connect(mx.exportDestination);
+  }
+  return mx.exportDestination;
+}
+
+function setExportButtonState(recording) {
+  const btn = $("mx-export-mix");
+  if (!btn) return;
+  btn.textContent = recording ? "Stop Export" : "Export Mix";
+  btn.classList.toggle("active", recording);
+  btn.title = recording ? "Stop recording the final mixer output" : "Record and download the final mixer output";
+}
+
+function triggerAudioDownload(blob, mimeType) {
+  const extension = mimeType.includes("ogg") ? "ogg" : "webm";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `signal-lab-mix-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function startExportRecording() {
+  if (!mx.playing) {
+    $("mx-transport-label").textContent = "Start the mixer before exporting";
+    return;
+  }
+  if (mx.exportRecorder && mx.exportRecorder.state !== "inactive") return;
+  const mimeType = getSupportedRecorderMimeType();
+  if (!mimeType) {
+    $("mx-transport-label").textContent = "Export unavailable: this browser has no supported audio recorder";
+    return;
+  }
+
+  const destination = ensureExportDestination();
+  mx.exportChunks = [];
+  const recorder = new MediaRecorder(destination.stream, { mimeType });
+  mx.exportRecorder = recorder;
+
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data && event.data.size > 0) mx.exportChunks.push(event.data);
+  });
+  recorder.addEventListener("stop", () => {
+    const blob = new Blob(mx.exportChunks, { type: mimeType });
+    mx.exportChunks = [];
+    mx.exportRecorder = null;
+    setExportButtonState(false);
+    if (blob.size > 0) triggerAudioDownload(blob, mimeType);
+    updateTransportUI();
+  });
+  recorder.addEventListener("error", () => {
+    mx.exportChunks = [];
+    mx.exportRecorder = null;
+    setExportButtonState(false);
+    $("mx-transport-label").textContent = "Export failed while recording the mixer output";
+  });
+
+  recorder.start();
+  setExportButtonState(true);
+  $("mx-transport-label").textContent = "Recording final mix… Click Stop Export when finished";
+}
+
+function stopExportRecording() {
+  if (!mx.exportRecorder || mx.exportRecorder.state === "inactive") return;
+  mx.exportRecorder.stop();
+}
+
+function toggleExportRecording() {
+  if (mx.exportRecorder && mx.exportRecorder.state !== "inactive") stopExportRecording();
+  else startExportRecording();
+}
 
 function hSlider(min, max, step, value, unit, onChange) {
   const wrap = document.createElement("div");
@@ -316,7 +401,9 @@ function setMeterBlock(wrap, peak, rms) {
   wrap.querySelector(".mr-peak").textContent = peak <= -99 ? "-∞" : peak.toFixed(1);
 }
 
-/* ---------------- channel strip UI ---------------- */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 
 function buildChannelStrip(c) {
   const ch = mx.channels[c.id];
@@ -375,8 +462,6 @@ function buildChannelStrip(c) {
   return strip;
 }
 
-/* ---------------- master bus strip UI ---------------- */
-
 function buildBusStrip(key, label, gainNodeGetter) {
   const strip = document.createElement("div");
   strip.className = "bus-strip";
@@ -406,8 +491,6 @@ function refreshListenButtons() {
   monitorBusUI.listenBtn.classList.toggle("active", mx.listen === "monitor");
 }
 
-/* ---------------- meter animation loop ---------------- */
-
 function meterLoop() {
   mx.tracks.forEach((c) => {
     const ch = mx.channels[c.id];
@@ -427,12 +510,6 @@ function meterLoop() {
     setMeterBlock(monitorBusUI.meterEl, peakDb(buf), rmsDb(buf));
   }
   mx.meterRAF = requestAnimationFrame(meterLoop);
-}
-
-/* ---------------- dynamic track management (Add Track) ---------------- */
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function slugify(s) {
@@ -474,9 +551,7 @@ async function addPresetTrack(preset) {
   try {
     await loadTrackBuffer(t);
     if (mx.playing) { startTrackPlayback(t); applyChannelGain(t.id); }
-  } catch (_) {
-    // Decode/fetch failure — already surfaced in the channel strip via updateChannelLoadingUI.
-  }
+  } catch (_) {}
 }
 
 async function addUploadTrack(file) {
@@ -485,9 +560,7 @@ async function addUploadTrack(file) {
   try {
     await loadTrackBuffer(t);
     if (mx.playing) { startTrackPlayback(t); applyChannelGain(t.id); }
-  } catch (_) {
-    // Decode failure — already surfaced in the channel strip via updateChannelLoadingUI.
-  }
+  } catch (_) {}
 }
 
 function buildAddTrackTile() {
@@ -539,7 +612,16 @@ function buildAddTrackTile() {
   return tile;
 }
 
-/* ---------------- build UI once ---------------- */
+function buildExportButton() {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "mini-btn";
+  btn.id = "mx-export-mix";
+  btn.textContent = "Export Mix";
+  btn.title = "Record and download the final mixer output";
+  btn.addEventListener("click", toggleExportRecording);
+  return btn;
+}
 
 function buildUI() {
   initChannelState();
@@ -553,10 +635,12 @@ function buildUI() {
   monitorBusUI = buildBusStrip("monitor", "Stage Monitors", () => mx.monitorBusGain);
   masterWrap.appendChild(mainBusUI.strip);
   masterWrap.appendChild(monitorBusUI.strip);
+
+  const transport = document.querySelector(".mixer-transport");
+  if (transport && !$("mx-export-mix")) transport.appendChild(buildExportButton());
+
   refreshListenButtons();
 }
-
-/* ---------------- wiring ---------------- */
 
 function openMixer() {
   $("mixer-backdrop").hidden = false;
