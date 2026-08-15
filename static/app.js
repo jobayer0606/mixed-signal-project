@@ -1,5 +1,5 @@
-﻿/* =====================================================================
-   SIGNAL LAB â€” app.js
+/* =====================================================================
+   SIGNAL LAB — app.js
    DSP visualization workbench over the PyAudioLab FastAPI backend.
 
    HARD RULE: every pixel drawn to the waveform, spectrum, spectrogram
@@ -10,14 +10,14 @@
    distortion waveshaper) evaluated on the real parameter values.
    There is NO synthetic "demo" signal and NO canned effect animation
    anywhere in this file. While a backend request is in flight the UI
-   shows a "Processingâ€¦" state instead of guessing at the result.
+   shows a "Processing…" state instead of guessing at the result.
    ===================================================================== */
 
 (() => {
 "use strict";
 
 /* --------------------------------------------------------------- *
- * 1. EFFECT METADATA â€” param UI schema + detail-panel routing      *
+ * 1. EFFECT METADATA — param UI schema + detail-panel routing      *
  * --------------------------------------------------------------- */
 
 const EQ_BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -32,7 +32,7 @@ const GROUPS = [
 const EFFECTS = {
   gain: {
     label: "Gain", tier: "Basic", detail: "generic",
-    explain: "Multiplies every sample by a constant factor. The whole trace grows or shrinks uniformly â€” nothing about its shape changes, only its loudness.",
+    explain: "Multiplies every sample by a constant factor. The whole trace grows or shrinks uniformly — nothing about its shape changes, only its loudness.",
     params: [{ key: "gain_db", type: "dial", min: -24, max: 24, step: 0.5, unit: "dB", def: 3 }],
   },
   normalize: {
@@ -61,7 +61,7 @@ const EFFECTS = {
   },
   invert: {
     label: "Phase Invert", tier: "Basic", detail: "generic",
-    explain: "Flips the sign of every sample. The waveform mirrors across the zero line â€” identical loudness and shape, opposite polarity.",
+    explain: "Flips the sign of every sample. The waveform mirrors across the zero line — identical loudness and shape, opposite polarity.",
     params: [],
   },
   trim_silence: {
@@ -74,12 +74,12 @@ const EFFECTS = {
   },
   hard_limit: {
     label: "Hard Limiter", tier: "Intermediate", detail: "generic",
-    explain: "Any sample above the threshold gets clipped flat at that ceiling â€” a hard wall the signal cannot cross.",
+    explain: "Any sample above the threshold gets clipped flat at that ceiling — a hard wall the signal cannot cross.",
     params: [{ key: "threshold_db", type: "dial", min: -24, max: 0, step: 0.5, unit: "dB", def: -6 }],
   },
   soft_clip: {
     label: "Soft Clipper", tier: "Intermediate", detail: "generic",
-    explain: "Samples approaching the threshold are rounded off with a tanh curve instead of clipped flat â€” gentler, with added harmonics.",
+    explain: "Samples approaching the threshold are rounded off with a tanh curve instead of clipped flat — gentler, with added harmonics.",
     params: [{ key: "threshold_db", type: "dial", min: -24, max: 0, step: 0.5, unit: "dB", def: -6 }],
   },
   compress: {
@@ -95,7 +95,7 @@ const EFFECTS = {
   },
   distort: {
     label: "Distortion", tier: "Stretch", detail: "distortion",
-    explain: "Pushes the signal into nonlinear territory, adding harmonics â€” the waveform squares off and the spectrum gains overtones.",
+    explain: "Pushes the signal into nonlinear territory, adding harmonics — the waveform squares off and the spectrum gains overtones.",
     params: [
       { key: "drive_db", type: "dial", min: 0, max: 36, step: 1, unit: "dB", def: 12 },
       { key: "mode", type: "seg", options: ["soft", "hard"], def: "soft" },
@@ -104,7 +104,7 @@ const EFFECTS = {
   },
   reverse: {
     label: "Reverse", tier: "Basic", detail: "generic",
-    explain: "Reads every sample back to front. The shape is identical, just played in the opposite order â€” watch it flip end-for-end in the waveform.",
+    explain: "Reads every sample back to front. The shape is identical, just played in the opposite order — watch it flip end-for-end in the waveform.",
     params: [],
   },
   delay: {
@@ -123,7 +123,7 @@ const EFFECTS = {
   },
   time_stretch: {
     label: "Time Stretch", tier: "Stretch", detail: "generic",
-    explain: "Uses a phase vocoder to compress or expand the signal in time while keeping pitch constant â€” length changes, tone doesn't.",
+    explain: "Uses a phase vocoder to compress or expand the signal in time while keeping pitch constant — length changes, tone doesn't.",
     params: [{ key: "factor", type: "dial", min: 0.25, max: 4, step: 0.05, unit: "x", def: 1.25 }],
   },
   eq: {
@@ -133,7 +133,7 @@ const EFFECTS = {
   },
   reverb: {
     label: "Schroeder Reverb", tier: "Stretch", detail: "generic",
-    explain: "Runs the signal through parallel comb filters and series allpass filters to build a dense, decaying reflection tail â€” visible as trailing energy after the dry signal ends.",
+    explain: "Runs the signal through parallel comb filters and series allpass filters to build a dense, decaying reflection tail — visible as trailing energy after the dry signal ends.",
     params: [
       { key: "room_size", type: "dial", min: 0, max: 1, step: 0.01, unit: "", def: 0.5 },
       { key: "damping", type: "dial", min: 0, max: 1, step: 0.01, unit: "", def: 0.5 },
@@ -176,6 +176,7 @@ const ICONS = {
  * --------------------------------------------------------------- */
 
 const API = "/api";
+const SESSION_KEY = "signalLabSession_v1";
 
 const state = {
   audioCtx: null,
@@ -184,8 +185,8 @@ const state = {
   sampleRate: 44100,
   duration: 0,
   channels: 1,
-  currentBuffer: null,    // AudioBuffer â€” last committed (base) signal
-  previewBuffer: null,    // AudioBuffer â€” pending live-preview signal (real backend output)
+  currentBuffer: null,    // AudioBuffer — last committed (base) signal
+  previewBuffer: null,    // AudioBuffer — pending live-preview signal (real backend output)
   previewFileId: null,
   activeEffect: null,     // key into EFFECTS
   paramValues: {},
@@ -195,7 +196,7 @@ const state = {
   isProcessing: false,
 
   // A/B + view state
-  abMode: "original",     // 'original' | 'processed' â€” controls playback + primary trace
+  abMode: "original",     // 'original' | 'processed' — controls playback + primary trace
   view: { start: 0, end: 0 },   // seconds, current waveform zoom window
   selection: null,        // { startS, endS } | null
   selectionOnly: false,
@@ -209,7 +210,395 @@ const state = {
   analyserL: null,
   analyserR: null,
   meterRAF: null,
+
+  // multi-song session — each song keeps its own committed fileId/metadata.
+  songs: [],            // persistent song snapshots (metadata only, no AudioBuffer)
+  activeSongIdx: -1,    // index into songs[] currently being edited
 };
+
+let aliasLabBuilt = false;
+function ensureAliasingLabPanel() {
+  if (aliasLabBuilt) return;
+  aliasLabBuilt = true;
+  const wrap = document.createElement("div");
+  wrap.className = "panel";
+  wrap.style.marginTop = "12px";
+wrap.innerHTML = `<div class="panel-head"><span class="panel-label">Aliasing Lab — Synthetic DSP Experiment</span></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);">Test frequency (Hz)
+        <input type="number" id="alias-freq" value="7000" min="1" step="1" style="display:block;width:100px;"></label>
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);">Sample rate (Hz)
+        <input type="number" id="alias-sr" value="10000" min="100" step="1" style="display:block;width:100px;"></label>
+    </div>
+    <div id="alias-status" style="font:600 12px var(--ff-mono);margin-bottom:6px;"></div>
+    <div>Sampled waveform</div>
+    <canvas id="alias-wave" width="500" height="70" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <div style="margin-top:6px;">Spectrum (Nyquist marked at right edge)</div>
+    <canvas id="alias-spectrum" width="500" height="90" style="background:#10151d;border:1px solid var(--hairline);"></canvas>`;
+  document.querySelector(".stage").appendChild(wrap);
+  $("alias-freq").addEventListener("input", renderAliasingLab);
+  $("alias-sr").addEventListener("input", renderAliasingLab);
+}
+
+function aliasedFrequency(f, fs) {
+  let apparent = f % fs;
+  if (apparent > fs / 2) apparent = fs - apparent;
+  return apparent;
+}
+
+let aliasRAF = null;
+
+function drawAliasWaveform() {
+  const f = Math.max(1, Number($("alias-freq").value) || 0);
+  const fs = Math.max(100, Number($("alias-sr").value) || 0);
+  const nSamples = Math.max(64, Math.round(fs * 0.02));
+  const tOffset = performance.now() / 1000;
+  const samples = new Float64Array(nSamples);
+  for (let i = 0; i < nSamples; i++) samples[i] = Math.sin(2 * Math.PI * f * (tOffset + i / fs));
+
+  const dpr = window.devicePixelRatio || 1;
+  const waveEl = $("alias-wave");
+  const wRect = waveEl.getBoundingClientRect();
+  waveEl.width = Math.max(1, Math.round(wRect.width * dpr));
+  waveEl.height = Math.max(1, Math.round(70 * dpr));
+  const wctx = waveEl.getContext("2d");
+  wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const ww = wRect.width, wh = 70;
+  wctx.clearRect(0, 0, ww, wh);
+  wctx.beginPath();
+  for (let i = 0; i < nSamples; i++) { const x=(i/(nSamples-1))*ww, y=wh/2-samples[i]*(wh/2)*0.9; i===0?wctx.moveTo(x,y):wctx.lineTo(x,y); }
+  wctx.strokeStyle = "#ffb454"; wctx.lineWidth = 1.3; wctx.stroke();
+  wctx.fillStyle = "#ffb454";
+  for (let i = 0; i < nSamples; i++) { const x=(i/(nSamples-1))*ww, y=wh/2-samples[i]*(wh/2)*0.9; wctx.beginPath(); wctx.arc(x,y,1.4,0,Math.PI*2); wctx.fill(); }
+  const period = nSamples / fs;
+  const playFrac = (tOffset % period) / period;
+  const px = playFrac * ww;
+  wctx.strokeStyle = "rgba(255,255,255,.6)";
+  wctx.lineWidth = 1;
+  wctx.beginPath(); wctx.moveTo(px, 0); wctx.lineTo(px, wh); wctx.stroke();
+}
+
+function aliasWaveTick() {
+  drawAliasWaveform();
+  aliasRAF = requestAnimationFrame(aliasWaveTick);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (aliasRAF) { cancelAnimationFrame(aliasRAF); aliasRAF = null; } }
+  else if (!aliasRAF) { aliasRAF = requestAnimationFrame(aliasWaveTick); }
+});
+
+function naiveDownsample(mono, srIn, srOut) {
+  const ratio = srIn / srOut;
+  const nOut = Math.max(1, Math.floor(mono.length / ratio));
+  const low = new Float32Array(nOut);
+  for (let i = 0; i < nOut; i++) low[i] = mono[Math.min(mono.length - 1, Math.round(i * ratio))];
+  return low;
+}
+function zeroOrderHoldUpsample(low, srOut, srIn, targetLen) {
+  const ratio = srIn / srOut;
+  const out = new Float32Array(targetLen);
+  for (let j = 0; j < targetLen; j++) out[j] = low[Math.min(low.length - 1, Math.floor(j / ratio))];
+  return out;
+}
+function computeEnergyAboveNyquist(mono, sr, targetNyquist) {
+  const winSize = Math.min(nextPow2(mono.length), 65536);
+  const start = Math.max(0, Math.floor((mono.length - winSize) / 2));
+  const re = new Float64Array(winSize), im = new Float64Array(winSize);
+  for (let i = 0; i < winSize; i++) { const s = mono[start + i] || 0; const w = 0.5 - 0.5*Math.cos((2*Math.PI*i)/(winSize-1)); re[i] = s * w; }
+  fft(re, im);
+  const half = winSize / 2;
+  let totalE = 0, aboveE = 0;
+  const cutoffBin = Math.floor((targetNyquist / (sr/2)) * half);
+  for (let i = 0; i < half; i++) { const mag = re[i]*re[i] + im[i]*im[i]; totalE += mag; if (i >= cutoffBin) aboveE += mag; }
+  return totalE > 0 ? (aboveE/totalE)*100 : 0;
+}
+
+let uploadedAliasBuilt = false;
+let aliasPlaybackSource = null;
+let uaReconstructed = null;
+
+function ensureUploadedAliasingPanel() {
+  if (uploadedAliasBuilt) return;
+  uploadedAliasBuilt = true;
+  const wrap = document.createElement("div");
+  wrap.className = "panel";
+  wrap.style.marginTop = "12px";
+  wrap.innerHTML = `<div class="panel-head"><span class="panel-label">Analyze Uploaded Audio</span></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);">Target sample rate
+        <select id="ua-target-sr" style="display:block;width:120px;">
+          <option value="8000">8000 Hz</option>
+          <option value="11025">11025 Hz</option>
+          <option value="16000">16000 Hz</option>
+          <option value="22050" selected>22050 Hz</option>
+        </select></label>
+      <button class="mini-btn" id="ua-analyze">Analyze Uploaded Audio</button>
+      <button class="mini-btn" id="ua-play">Play Aliased Audio</button>
+      <button class="mini-btn" id="ua-stop">Stop</button>
+    </div>
+    <div id="ua-status" style="font:600 12px var(--ff-mono);margin-bottom:6px;"></div>
+    <div>Original Audio</div>
+    <canvas id="ua-wave-orig" width="500" height="60" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <canvas id="ua-spec-orig" width="500" height="80" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <div style="margin-top:6px;">Aliased Audio (no anti-aliasing filter)</div>
+    <canvas id="ua-wave-alias" width="500" height="60" style="background:#10151d;border:1px solid var(--hairline);"></canvas>
+    <canvas id="ua-spec-alias" width="500" height="80" style="background:#10151d;border:1px solid var(--hairline);"></canvas>`;
+  document.querySelector(".stage").appendChild(wrap);
+  $("ua-analyze").addEventListener("click", runUploadedAliasing);
+  $("ua-play").addEventListener("click", playAliasedAudio);
+  $("ua-stop").addEventListener("click", stopAliasedAudio);
+}
+
+function drawUaPanel(waveCanvas, specCanvas, samples, sr) {
+  const dpr = window.devicePixelRatio || 1;
+  const wRect = waveCanvas.getBoundingClientRect();
+  waveCanvas.width = Math.max(1, Math.round(wRect.width*dpr));
+  waveCanvas.height = Math.max(1, Math.round(60*dpr));
+  const wctx = waveCanvas.getContext("2d");
+  wctx.setTransform(dpr,0,0,dpr,0,0);
+  const ww = wRect.width, wh = 60;
+  wctx.clearRect(0,0,ww,wh);
+  const buckets = Math.max(2, Math.floor(ww));
+  const env = downsampleMinMax(samples, buckets);
+  const mid = wh/2;
+  wctx.beginPath();
+  for (let i=0;i<buckets;i++){ const x=(i/(buckets-1))*ww, y=mid-env.max[i]*mid*0.9; i===0?wctx.moveTo(x,y):wctx.lineTo(x,y); }
+  for (let i=buckets-1;i>=0;i--){ const x=(i/(buckets-1))*ww, y=mid-env.min[i]*mid*0.9; wctx.lineTo(x,y); }
+  wctx.closePath();
+  wctx.fillStyle = "rgba(255,180,84,.18)"; wctx.fill();
+  wctx.strokeStyle = "#ffb454"; wctx.lineWidth = 1.2; wctx.stroke();
+
+  const sRect = specCanvas.getBoundingClientRect();
+  specCanvas.width = Math.max(1, Math.round(sRect.width*dpr));
+  specCanvas.height = Math.max(1, Math.round(80*dpr));
+  const sctx = specCanvas.getContext("2d");
+  sctx.setTransform(dpr,0,0,dpr,0,0);
+  const sw = sRect.width, sh = 80;
+  sctx.clearRect(0,0,sw,sh);
+  const numBars = Math.max(24, Math.floor(sw/10));
+  const bars = computeSpectrum(samples, sr, numBars);
+  const gap=2, bw=(sw-gap*(numBars-1))/numBars;
+  sctx.fillStyle = "rgba(155,140,255,.8)";
+  for (let i=0;i<numBars;i++){ const bh=bars[i]*sh; sctx.fillRect(i*(bw+gap), sh-bh, bw, bh); }
+}
+
+function runUploadedAliasing() {
+  ensureUploadedAliasingPanel();
+  if (!state.currentBuffer) { $("ua-status").textContent = "Load an audio file first."; return; }
+  const targetSR = Number($("ua-target-sr").value);
+  const srIn = state.currentBuffer.sampleRate;
+  const nyquist = targetSR / 2;
+  const mono = monoOf(state.currentBuffer);
+
+  const low = naiveDownsample(mono, srIn, targetSR);
+  uaReconstructed = zeroOrderHoldUpsample(low, targetSR, srIn, mono.length);
+  const energyPct = computeEnergyAboveNyquist(mono, srIn, nyquist);
+
+  $("ua-status").innerHTML =
+    `Original SR: ${srIn} Hz &nbsp; Target SR: ${targetSR} Hz &nbsp; Nyquist: ${nyquist} Hz<br>
+     Aliasing risk: frequencies above Nyquist can fold into the audible spectrum.<br>
+     Energy above Nyquist (original signal): ${energyPct.toFixed(1)}%`;
+
+  drawUaPanel($("ua-wave-orig"), $("ua-spec-orig"), mono, srIn);
+  drawUaPanel($("ua-wave-alias"), $("ua-spec-alias"), uaReconstructed, srIn);
+}
+
+function playAliasedAudio() {
+  if (!uaReconstructed || !state.currentBuffer) return;
+  stopAliasedAudio();
+  const ctx = ac();
+  const buf = ctx.createBuffer(1, uaReconstructed.length, state.currentBuffer.sampleRate);
+  buf.copyToChannel(Float32Array.from(uaReconstructed), 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+  aliasPlaybackSource = src;
+}
+function stopAliasedAudio() {
+  if (aliasPlaybackSource) { try { aliasPlaybackSource.stop(); } catch(_){} try { aliasPlaybackSource.disconnect(); } catch(_){} aliasPlaybackSource = null; }
+}
+
+function renderAliasingLab() {
+  ensureAliasingLabPanel();
+  const f = Math.max(1, Number($("alias-freq").value) || 0);
+  const fs = Math.max(100, Number($("alias-sr").value) || 0);
+  const nyquist = fs / 2;
+
+  const nSamples = Math.max(64, Math.round(fs * 0.02));
+  const samples = new Float64Array(nSamples);
+  for (let i = 0; i < nSamples; i++) samples[i] = Math.sin(2 * Math.PI * f * (i / fs));
+
+  const aliasing = f > nyquist;
+  const apparentFreq = aliasedFrequency(f, fs);
+  $("alias-status").innerHTML = aliasing
+    ? `<span style="color:var(--danger);">Aliasing detected</span> — ${f.toFixed(0)} Hz > Nyquist ${nyquist.toFixed(0)} Hz. Aliased frequency: ${apparentFreq.toFixed(1)} Hz`
+    : `<span style="color:var(--ok);">No aliasing</span> — ${f.toFixed(0)} Hz ≤ Nyquist ${nyquist.toFixed(0)} Hz`;
+
+  const dpr = window.devicePixelRatio || 1;
+
+  const size = nextPow2(nSamples);
+  const re = new Float64Array(size), im = new Float64Array(size);
+  for (let i = 0; i < nSamples; i++) re[i] = samples[i] * (0.5 - 0.5 * Math.cos((2*Math.PI*i)/(nSamples-1)));
+  fft(re, im);
+  const half = size / 2;
+  const mags = new Float64Array(half);
+  let maxMag = 1e-9;
+  for (let i = 0; i < half; i++) { mags[i] = Math.hypot(re[i], im[i]); if (mags[i] > maxMag) maxMag = mags[i]; }
+
+  const specEl = $("alias-spectrum");
+  const sRect = specEl.getBoundingClientRect();
+  specEl.width = Math.max(1, Math.round(sRect.width * dpr));
+  specEl.height = Math.max(1, Math.round(90 * dpr));
+  const sctx = specEl.getContext("2d");
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sw = sRect.width, sh = 90;
+  sctx.clearRect(0, 0, sw, sh);
+  const bw = sw / half;
+  sctx.fillStyle = "rgba(155,140,255,.8)";
+  for (let i = 0; i < half; i++) { const barH=(mags[i]/maxMag)*sh; sctx.fillRect((i/half)*sw, sh-barH, Math.max(1,bw), barH); }
+  sctx.strokeStyle = "#ffd166"; sctx.lineWidth = 1.5; sctx.setLineDash([4,3]);
+  sctx.beginPath(); sctx.moveTo(sw-1,0); sctx.lineTo(sw-1,sh); sctx.stroke(); sctx.setLineDash([]);
+  sctx.fillStyle = "#ffd166"; sctx.font = "10px monospace";
+  sctx.fillText(`Nyquist ${nyquist.toFixed(0)} Hz`, Math.max(2, sw - 90), 12);
+}
+
+function computeDifferenceWave(orig, proc) {
+  const n = Math.min(orig.length, proc.length);
+  const diff = new Float32Array(n);
+  for (let i = 0; i < n; i++) diff[i] = proc[i] - orig[i];
+  return diff;
+}
+
+function computeStereoCorrelation(chL, chR) {
+  const n = Math.min(chL.length, chR.length);
+  if (!n) return 0;
+  let sumLR = 0, sumLL = 0, sumRR = 0;
+  for (let i = 0; i < n; i++) { sumLR += chL[i]*chR[i]; sumLL += chL[i]*chL[i]; sumRR += chR[i]*chR[i]; }
+  const denom = Math.sqrt(sumLL * sumRR);
+  return denom > 1e-9 ? sumLR / denom : 0;
+}
+
+let dspAnalyzerBuilt = false;
+function ensureDspAnalyzerPanel() {
+  if (dspAnalyzerBuilt) return;
+  dspAnalyzerBuilt = true;
+  const wrap = document.createElement("div");
+  wrap.className = "detail-panel";
+  wrap.style.marginTop = "10px";
+  wrap.innerHTML = `<div class="detail-head">Difference (processed − original)</div>
+    <canvas id="diff-canvas" height="60"></canvas>
+    <div class="detail-head" style="margin-top:6px;">Spectrum difference</div>
+    <canvas id="diff-spectrum-canvas" height="60"></canvas>
+    <div class="detail-stats" id="diff-stats"></div>`;
+  $("detail-panel").insertAdjacentElement("afterend", wrap);
+}
+
+function renderDifferencePanel() {
+  if (!state.previewBuffer || !state.currentBuffer) return;
+  ensureDspAnalyzerPanel();
+  const dpr = window.devicePixelRatio || 1;
+
+  const diffCanvas = $("diff-canvas");
+  const dRect = diffCanvas.getBoundingClientRect();
+  diffCanvas.width = Math.max(1, Math.round(dRect.width * dpr));
+  diffCanvas.height = Math.max(1, Math.round(60 * dpr));
+  const dctx = diffCanvas.getContext("2d");
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = dRect.width, h = 60;
+  dctx.clearRect(0, 0, w, h);
+
+  const origMono = monoOf(state.currentBuffer);
+  const procMono = monoOf(state.previewBuffer);
+  const diff = computeDifferenceWave(origMono, procMono);
+  const buckets = Math.max(2, Math.floor(w));
+  const env = downsampleMinMax(diff, buckets);
+  const mid = h / 2;
+  dctx.beginPath();
+  for (let i = 0; i < buckets; i++) { const x = (i/(buckets-1))*w, y = mid - env.max[i]*mid*0.9; i===0?dctx.moveTo(x,y):dctx.lineTo(x,y); }
+  for (let i = buckets - 1; i >= 0; i--) { const x = (i/(buckets-1))*w, y = mid - env.min[i]*mid*0.9; dctx.lineTo(x,y); }
+  dctx.closePath();
+  dctx.fillStyle = "rgba(255,107,122,.18)"; dctx.fill();
+  dctx.strokeStyle = "#ff6b7a"; dctx.lineWidth = 1.2; dctx.stroke();
+
+  const specCanvas = $("diff-spectrum-canvas");
+  const sRect = specCanvas.getBoundingClientRect();
+  specCanvas.width = Math.max(1, Math.round(sRect.width * dpr));
+  specCanvas.height = Math.max(1, Math.round(60 * dpr));
+  const sctx = specCanvas.getContext("2d");
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sw = sRect.width, sh = 60;
+  sctx.clearRect(0, 0, sw, sh);
+  const numBars = Math.max(24, Math.floor(sw / 10));
+  const origBars = computeSpectrum(origMono, state.currentBuffer.sampleRate, numBars);
+  const procBars = computeSpectrum(procMono, state.previewBuffer.sampleRate, numBars);
+  const gap = 2, bw = (sw - gap*(numBars-1)) / numBars;
+  for (let i = 0; i < numBars; i++) {
+    const dVal = procBars[i] - origBars[i];
+    const bh = Math.abs(dVal) * (sh/2);
+    sctx.fillStyle = dVal >= 0 ? "rgba(95,227,163,.75)" : "rgba(255,107,122,.75)";
+    sctx.fillRect(i*(bw+gap), dVal >= 0 ? sh/2 - bh : sh/2, bw, bh);
+  }
+
+  let peakDiff = 0;
+  for (let i = 0; i < diff.length; i++) peakDiff = Math.max(peakDiff, Math.abs(diff[i]));
+  $("diff-stats").innerHTML = `<span>peak diff: <b>${peakDiff.toFixed(4)}</b></span>`;
+}
+
+function renderDifferencePanel() {
+  if (!state.previewBuffer || !state.currentBuffer) return;
+  ensureDspAnalyzerPanel();
+  const dpr = window.devicePixelRatio || 1;
+
+  const diffCanvas = $("diff-canvas");
+  const dRect = diffCanvas.getBoundingClientRect();
+  diffCanvas.width = Math.max(1, Math.round(dRect.width * dpr));
+  diffCanvas.height = Math.max(1, Math.round(60 * dpr));
+  const dctx = diffCanvas.getContext("2d");
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = dRect.width, h = 60;
+  dctx.clearRect(0, 0, w, h);
+
+  const origMono = monoOf(state.currentBuffer);
+  const procMono = monoOf(state.previewBuffer);
+  const diff = computeDifferenceWave(origMono, procMono);
+  const buckets = Math.max(2, Math.floor(w));
+  const env = downsampleMinMax(diff, buckets);
+  const mid = h / 2;
+  dctx.beginPath();
+  for (let i = 0; i < buckets; i++) { const x = (i/(buckets-1))*w, y = mid - env.max[i]*mid*0.9; i===0?dctx.moveTo(x,y):dctx.lineTo(x,y); }
+  for (let i = buckets - 1; i >= 0; i--) { const x = (i/(buckets-1))*w, y = mid - env.min[i]*mid*0.9; dctx.lineTo(x,y); }
+  dctx.closePath();
+  dctx.fillStyle = "rgba(255,107,122,.18)"; dctx.fill();
+  dctx.strokeStyle = "#ff6b7a"; dctx.lineWidth = 1.2; dctx.stroke();
+
+  const specCanvas = $("diff-spectrum-canvas");
+  const sRect = specCanvas.getBoundingClientRect();
+  specCanvas.width = Math.max(1, Math.round(sRect.width * dpr));
+  specCanvas.height = Math.max(1, Math.round(60 * dpr));
+  const sctx = specCanvas.getContext("2d");
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sw = sRect.width, sh = 60;
+  sctx.clearRect(0, 0, sw, sh);
+  const numBars = Math.max(24, Math.floor(sw / 10));
+  const origBars = computeSpectrum(origMono, state.currentBuffer.sampleRate, numBars);
+  const procBars = computeSpectrum(procMono, state.previewBuffer.sampleRate, numBars);
+  const gap = 2, bw = (sw - gap*(numBars-1)) / numBars;
+  for (let i = 0; i < numBars; i++) {
+    const dVal = procBars[i] - origBars[i];
+    const bh = Math.abs(dVal) * (sh/2);
+    sctx.fillStyle = dVal >= 0 ? "rgba(95,227,163,.75)" : "rgba(255,107,122,.75)";
+    sctx.fillRect(i*(bw+gap), dVal >= 0 ? sh/2 - bh : sh/2, bw, bh);
+  }
+
+  let peakDiff = 0;
+  for (let i = 0; i < diff.length; i++) peakDiff = Math.max(peakDiff, Math.abs(diff[i]));
+  $("diff-stats").innerHTML = `<span>peak diff: <b>${peakDiff.toFixed(4)}</b></span>`;
+
+  // INTEGRATED CALL:
+  renderSpectrogramComparison();
+}
 
 function ac() {
   if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -259,7 +648,7 @@ function toast(msg, type = "") {
 function setStatus(msg) { $("status-text").textContent = msg; }
 
 /* --------------------------------------------------------------- *
- * 5. FFT (radix-2, real input via Hann window) â€” shared by         *
+ * 5. FFT (radix-2, real input via Hann window) — shared by         *
  *    spectrum analyzer + spectrogram, all on real decoded PCM      *
  * --------------------------------------------------------------- */
 
@@ -371,6 +760,120 @@ function computeSpectrogram(samples, sr, targetCols = 360, targetRows = 160, fft
   return { cols, rows: targetRows, data, sr, fftSize, hopSize: hop, durationS: n / sr };
 }
 
+function initSpectrogramComparisonUI() {
+    const detailArea = document.querySelector('#detail-panel') || document.querySelector('.detail-panel');
+    if (!detailArea || document.getElementById('spectrogram-comparison-container')) return;
+
+    const container = document.createElement('div');
+    container.id = 'spectrogram-comparison-container';
+    container.className = 'detail-panel';
+    container.style.marginTop = '10px';
+    container.innerHTML = `
+        <div class="detail-head">Spectrogram Comparison</div>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <div style="flex: 1;">
+                <div style="font: 11px var(--ff-mono); color: var(--text-mid); margin-bottom: 4px;">Original</div>
+                <canvas id="canvas-spec-orig" height="120" style="width: 100%; background: #10151d; border: 1px solid var(--hairline); display: block;"></canvas>
+            </div>
+            <div style="flex: 1;">
+                <div style="font: 11px var(--ff-mono); color: var(--text-mid); margin-bottom: 4px;">Processed</div>
+                <canvas id="canvas-spec-proc" height="120" style="width: 100%; background: #10151d; border: 1px solid var(--hairline); display: block;"></canvas>
+            </div>
+            <div style="flex: 1;">
+                <div style="font: 11px var(--ff-mono); color: var(--text-mid); margin-bottom: 4px;">Difference (Processed − Original)</div>
+                <canvas id="canvas-spec-diff" height="120" style="width: 100%; background: #10151d; border: 1px solid var(--hairline); display: block;"></canvas>
+            </div>
+        </div>
+    `;
+    detailArea.insertAdjacentElement('afterend', container);
+}
+
+
+function renderSpectrogramComparison() {
+    if (!state.previewBuffer || !state.currentBuffer) return;
+    initSpectrogramComparisonUI();
+
+    const origCanvas = document.getElementById('canvas-spec-orig');
+    const procCanvas = document.getElementById('canvas-spec-proc');
+    const diffCanvas = document.getElementById('canvas-spec-diff');
+    if (!origCanvas || !procCanvas || !diffCanvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    [origCanvas, procCanvas, diffCanvas].forEach(c => {
+        const rect = c.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width * dpr));
+        const h = Math.max(1, Math.round(120 * dpr));
+        if (c.width !== w) c.width = w;
+        if (c.height !== h) c.height = h;
+    });
+
+    const origCtx = origCanvas.getContext('2d');
+    const procCtx = procCanvas.getContext('2d');
+    const diffCtx = diffCanvas.getContext('2d');
+
+    const origMono = monoOf(state.currentBuffer);
+    const procMono = monoOf(state.previewBuffer);
+    const sr = state.currentBuffer.sampleRate;
+
+    const origSpec = computeSpectrogram(origMono, sr, 200, 100, 1024);
+    const procSpec = computeSpectrogram(procMono, sr, 200, 100, 1024);
+
+    if (!origSpec || !procSpec || !origSpec.data || !procSpec.data) return;
+
+    const cols = Math.min(origSpec.cols, procSpec.cols);
+    const rows = Math.min(origSpec.rows, procSpec.rows);
+
+    const drawSpecToCanvas = (ctx, canvas, dataGetter) => {
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const imgData = ctx.createImageData(Math.floor(w), Math.floor(h));
+        const pixels = imgData.data;
+
+        for (let x = 0; x < Math.floor(w); x++) {
+            const col = Math.min(cols - 1, Math.floor((x / w) * cols));
+            for (let y = 0; y < Math.floor(h); y++) {
+                const row = Math.min(rows - 1, Math.floor(((h - 1 - y) / h) * rows));
+                const val = dataGetter(col, row);
+                const pxIdx = (y * Math.floor(w) + x) * 4;
+
+                if (typeof val === 'number') {
+                    pixels[pxIdx + 0] = Math.floor(val * 120);
+                    pixels[pxIdx + 1] = Math.floor(val * 210);
+                    pixels[pxIdx + 2] = Math.floor(val * 255);
+                    pixels[pxIdx + 3] = 255;
+                } else {
+                    const d = val.delta;
+                    if (d >= 0) {
+                        pixels[pxIdx + 0] = Math.floor(Math.min(1, d * 2) * 255);
+                        pixels[pxIdx + 1] = Math.floor(Math.min(1, d) * 180);
+                        pixels[pxIdx + 2] = 0;
+                    } else {
+                        const absD = Math.abs(d);
+                        pixels[pxIdx + 0] = 0;
+                        pixels[pxIdx + 1] = Math.floor(Math.min(1, absD) * 180);
+                        pixels[pxIdx + 2] = Math.floor(Math.min(1, absD * 2) * 255);
+                    }
+                    pixels[pxIdx + 3] = 255;
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+    };
+
+    drawSpecToCanvas(origCtx, origCanvas, (c, r) => origSpec.data[c * origSpec.rows + r]);
+    drawSpecToCanvas(procCtx, procCanvas, (c, r) => procSpec.data[c * procSpec.rows + r]);
+    drawSpecToCanvas(diffCtx, diffCanvas, (c, r) => {
+        const oVal = origSpec.data[c * origSpec.rows + r] || 0;
+        const pVal = procSpec.data[c * procSpec.rows + r] || 0;
+        return { delta: pVal - oVal };
+    });
+}
+
+
+
 /* --------------------------------------------------------------- *
  * 6. AUDIO BUFFER HELPERS (real PCM utilities)                     *
  * --------------------------------------------------------------- */
@@ -433,14 +936,14 @@ const COLOR_B_STROKE = "#9b8cff";
 const COLOR_B_GLOW = "rgba(155,140,255,.55)";
 
 /* --------------------------------------------------------------- *
- * 8. WAVEFORM PANEL â€” real envelope, ruler, zoom, selection,       *
+ * 8. WAVEFORM PANEL — real envelope, ruler, zoom, selection,       *
  *    synchronized playhead                                          *
  * --------------------------------------------------------------- */
 
 function activeDisplayBuffers() {
   // "original" trace is always the last committed signal.
   // "processed" trace is the pending live preview, or (once nothing is
-  // pending) the same committed signal â€” never a fabricated one.
+  // pending) the same committed signal — never a fabricated one.
   const original = state.currentBuffer;
   const processed = state.previewBuffer || state.currentBuffer;
   return { original, processed };
@@ -601,12 +1104,12 @@ function updateWaveformSub() {
   const el = $("waveform-sub");
   if (!state.currentBuffer) { el.textContent = ""; return; }
   const span = state.view.end - state.view.start;
-  el.textContent = `${span.toFixed(span < 1 ? 3 : 2)}s window Â· ${zoomFactor().toFixed(1)}Ã—`;
-  $("zoom-label").textContent = `${zoomFactor().toFixed(1)}Ã—`;
+  el.textContent = `${span.toFixed(span < 1 ? 3 : 2)}s window · ${zoomFactor().toFixed(1)}×`;
+  $("zoom-label").textContent = `${zoomFactor().toFixed(1)}×`;
 }
 
 /* --------------------------------------------------------------- *
- * 9. SPECTRUM PANEL â€” real FFT bars + freq/dB axes + EQ overlay    *
+ * 9. SPECTRUM PANEL — real FFT bars + freq/dB axes + EQ overlay    *
  * --------------------------------------------------------------- */
 
 function renderSpectrum() {
@@ -722,7 +1225,7 @@ function drawEqCurveOverlay(ctx, axisPad, plotW, plotH, sr) {
 }
 
 /* --------------------------------------------------------------- *
- * 10. SPECTROGRAM PANEL â€” real STFT heatmap                        *
+ * 10. SPECTROGRAM PANEL — real STFT heatmap                        *
  * --------------------------------------------------------------- */
 
 function colorRamp(v) {
@@ -774,7 +1277,7 @@ function renderSpectrogram() {
     }
     octx.putImageData(img, 0, 0);
     state.spectrogramCache = { key: cacheKey, canvas: off, meta: spec };
-    $("spectrogram-sub").textContent = `STFT ${spec.fftSize}/${spec.hopSize} Â· ${spec.durationS.toFixed(1)}s`;
+    $("spectrogram-sub").textContent = `STFT ${spec.fftSize}/${spec.hopSize} · ${spec.durationS.toFixed(1)}s`;
   }
 
   spectrogramCtx.imageSmoothingEnabled = true;
@@ -795,7 +1298,7 @@ function renderSpectrogram() {
 }
 
 /* --------------------------------------------------------------- *
- * 11. METERS PANEL â€” real peak/RMS, L/R, clipping, dBFS            *
+ * 11. METERS PANEL — real peak/RMS, L/R, clipping, dBFS            *
  * --------------------------------------------------------------- */
 
 function buildMetersDom(numChannels) {
@@ -814,7 +1317,7 @@ function buildMetersDom(numChannels) {
         <div class="meter-peak-hold" style="bottom:0%"></div>
       </div>
       <div class="meter-clip"></div>
-      <div class="meter-readout"><b class="mr-peak">-âˆž</b><br>pk<br><b class="mr-rms">-âˆž</b><br>rms</div>
+      <div class="meter-readout"><b class="mr-peak">-∞</b><br>pk<br><b class="mr-rms">-∞</b><br>rms</div>
     `;
     body.appendChild(ch);
   });
@@ -835,8 +1338,8 @@ function setMeterChannel(labEl, peakDbVal, rmsDbVal) {
   fillRms.style.height = dbToPct(rmsDbVal) + "%";
   hold.style.bottom = dbToPct(peakDbVal) + "%";
   clip.classList.toggle("on", peakDbVal >= -0.15);
-  mrPeak.textContent = peakDbVal <= -99 ? "-âˆž" : peakDbVal.toFixed(1);
-  mrRms.textContent = rmsDbVal <= -99 ? "-âˆž" : rmsDbVal.toFixed(1);
+  mrPeak.textContent = peakDbVal <= -99 ? "-∞" : peakDbVal.toFixed(1);
+  mrRms.textContent = rmsDbVal <= -99 ? "-∞" : rmsDbVal.toFixed(1);
 }
 
 function renderStaticMeters() {
@@ -851,6 +1354,10 @@ function renderStaticMeters() {
   for (let c = 0; c < nCh; c++) {
     const data = channelOf(src, c);
     setMeterChannel(chEls[c], peakDb(data), rmsDb(data));
+  }
+  if (nCh === 2) {
+    const corr = computeStereoCorrelation(channelOf(src, 0), channelOf(src, 1));
+    $("meters-source").textContent = `static · L/R corr ${corr.toFixed(2)}`;
   }
 }
 
@@ -895,7 +1402,7 @@ function liveMeterLoop() {
 }
 
 /* --------------------------------------------------------------- *
- * 12. EFFECT DETAIL PANEL â€” analytic transfer curves (exact match  *
+ * 12. EFFECT DETAIL PANEL — analytic transfer curves (exact match  *
  *     to backend DSP formulas) + real before/after stats           *
  * --------------------------------------------------------------- */
 
@@ -921,6 +1428,7 @@ function renderDetailPanel() {
   else if (eff.detail === "compressor") renderCompressorDetail(w, h, key);
   else if (eff.detail === "distortion") renderDistortionDetail(w, h, key);
   else renderGenericDetail(w, h, key);
+  renderDifferencePanel();
 }
 
 function axisLine(x0, y0, x1, y1, color = "rgba(255,255,255,.15)") {
@@ -988,13 +1496,13 @@ function renderCompressorDetail(w, h, key) {
   detailCtx.shadowColor = "rgba(155,140,255,.6)"; detailCtx.shadowBlur = 5;
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
-  let grStat = "â€”";
+  let grStat = "—";
   if (state.previewBuffer && state.currentBuffer) {
     const before = rmsDb(monoOf(state.currentBuffer));
     const after = rmsDb(monoOf(state.previewBuffer));
     grStat = (after - before).toFixed(1) + " dB";
   }
-  $("detail-stats").innerHTML = `<span>threshold: <b>${threshold} dB</b></span><span>ratio: <b>${ratio}:1</b></span><span>measured level Î”: <b>${grStat}</b></span>`;
+  $("detail-stats").innerHTML = `<span>threshold: <b>${threshold} dB</b></span><span>ratio: <b>${ratio}:1</b></span><span>measured level Δ: <b>${grStat}</b></span>`;
 }
 
 function renderDistortionDetail(w, h, key) {
@@ -1027,7 +1535,7 @@ function renderDistortionDetail(w, h, key) {
   detailCtx.shadowColor = "rgba(255,138,138,.55)"; detailCtx.shadowBlur = 5;
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
-  let harmStat = "â€”";
+  let harmStat = "—";
   if (state.previewBuffer && state.currentBuffer) {
     const before = computeSpectrum(monoOf(state.currentBuffer), state.currentBuffer.sampleRate, 48);
     const after = computeSpectrum(monoOf(state.previewBuffer), state.previewBuffer.sampleRate, 48);
@@ -1077,9 +1585,275 @@ function renderGenericDetail(w, h, key) {
   const rB = rmsDb(bMono).toFixed(1), rA = rmsDb(aMono).toFixed(1);
   const durB = before.duration.toFixed(2), durA = after.duration.toFixed(2);
   $("detail-stats").innerHTML =
-    `<span>peak: <b>${pB}â†’${pA} dB</b></span>` +
-    `<span>rms: <b>${rB}â†’${rA} dB</b></span>` +
-    (Math.abs(before.duration - after.duration) > 0.01 ? `<span>duration: <b>${durB}sâ†’${durA}s</b></span>` : "");
+    `<span>peak: <b>${pB}→${pA} dB</b></span>` +
+    `<span>rms: <b>${rB}→${rA} dB</b></span>` +
+    (Math.abs(before.duration - after.duration) > 0.01 ? `<span>duration: <b>${durB}s→${durA}s</b></span>` : "");
+}
+
+/* --------------------------------------------------------------- *
+ * 12.5. SEPARATE ANALYZER PANELS (Frequency & Spectrum Analyzers)  *
+ * --------------------------------------------------------------- */
+
+let faHoverFreq = null;
+let faHoverDb = null;
+let saHoverTime = null;
+let saHoverFreq = null;
+
+function renderFrequencyAnalyzerPanel() {
+  const backdrop = $("freq-analyzer-backdrop");
+  if (!backdrop || backdrop.hidden) return;
+
+  const canvas = $("freq-analyzer-canvas");
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cw = rect.width, ch = rect.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  const buffer = state.previewBuffer || state.currentBuffer;
+  if (!buffer) {
+    ctx.fillStyle = "rgba(146,160,177,.6)";
+    ctx.font = "12px 'IBM Plex Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Load a signal to view frequency spectrum", cw / 2, ch / 2);
+    return;
+  }
+
+  const channelVal = $("fa-channel-select") ? $("fa-channel-select").value : "mono";
+  let samples;
+  if (channelVal === "left") samples = channelOf(buffer, 0);
+  else if (channelVal === "right") samples = channelOf(buffer, 1);
+  else samples = monoOf(buffer);
+
+  const sr = buffer.sampleRate;
+  const fftSize = parseInt($("fa-fft-select") ? $("fa-fft-select").value : "2048") || 2048;
+  const isLog = ($("fa-scale-select") ? $("fa-scale-select").value : "log") === "log";
+
+  if (state.selection && state.selection.endS > state.selection.startS) {
+    const s0 = Math.max(0, Math.floor(state.selection.startS * sr));
+    const s1 = Math.min(samples.length, Math.ceil(state.selection.endS * sr));
+    if (s1 > s0) samples = samples.subarray(s0, s1);
+  }
+
+  const padL = 40, padB = 22, padT = 14, padR = 14;
+  const plotW = cw - padL - padR;
+  const plotH = ch - padB - padT;
+
+  ctx.strokeStyle = "rgba(255,255,255,.06)";
+  ctx.lineWidth = 1;
+  ctx.font = "9.5px 'IBM Plex Mono', monospace";
+  ctx.fillStyle = "rgba(146,160,177,.6)";
+
+  const dbLevels = [0, -18, -36, -54, -72, -90];
+  dbLevels.forEach((db) => {
+    const y = padT + (1 - (db + 90) / 90) * plotH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cw - padR, y); ctx.stroke();
+    ctx.textAlign = "right";
+    ctx.fillText(`${db}dB`, padL - 4, y + 3);
+  });
+
+  const minHz = 20, maxHz = sr / 2;
+  const gridFreqs = isLog ? [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000] : [2000, 5000, 10000, 15000, 20000];
+  gridFreqs.forEach((f) => {
+    if (f > maxHz) return;
+    let xFrac = isLog
+      ? (Math.log10(f) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
+      : (f - minHz) / (maxHz - minHz);
+    xFrac = Math.max(0, Math.min(1, xFrac));
+    const x = padL + xFrac * plotW;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    ctx.textAlign = "center";
+    const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
+    ctx.fillText(label, x, ch - 6);
+  });
+
+  const size = nextPow2(Math.min(fftSize, samples.length || 2048));
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  const start = Math.max(0, Math.floor((samples.length - size) / 2));
+  for (let i = 0; i < size; i++) {
+    const s = samples[start + i] || 0;
+    const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1));
+    re[i] = s * w;
+  }
+  fft(re, im);
+
+  const half = size / 2;
+  const numSteps = Math.max(128, Math.floor(plotW));
+  const points = [];
+  let peakMag = 0, peakHz = 0, peakDbVal = -90;
+  let sumMag = 0, weightedSumFreq = 0;
+
+  for (let p = 0; p < numSteps; p++) {
+    const frac = p / (numSteps - 1);
+    const hz = isLog
+      ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
+      : minHz + frac * (maxHz - minHz);
+
+    const bin = Math.min(half - 1, Math.max(1, Math.floor((hz / maxHz) * half)));
+    const mag = Math.hypot(re[bin], im[bin]) / half;
+    const db = 20 * Math.log10(mag + 1e-9);
+    const normDb = Math.max(0, Math.min(1, (db + 90) / 90));
+
+    const x = padL + frac * plotW;
+    const y = padT + (1 - normDb) * plotH;
+    points.push({ x, y, hz, db });
+
+    if (mag > peakMag && hz >= 20) {
+      peakMag = mag;
+      peakHz = hz;
+      peakDbVal = db;
+    }
+    sumMag += mag;
+    weightedSumFreq += hz * mag;
+  }
+
+  const centroidHz = sumMag > 1e-9 ? weightedSumFreq / sumMag : 0;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + plotH);
+  points.forEach((pt) => ctx.lineTo(pt.x, pt.y));
+  ctx.lineTo(padL + plotW, padT + plotH);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(255,180,84,.14)";
+  ctx.fill();
+
+  ctx.beginPath();
+  points.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+  ctx.strokeStyle = "#ffb454";
+  ctx.lineWidth = 1.8;
+  ctx.shadowColor = "rgba(255,180,84,.5)";
+  ctx.shadowBlur = 6;
+  ctx.stroke();
+  ctx.restore();
+
+  if (peakMag > 1e-6) {
+    let pxFrac = isLog
+      ? (Math.log10(peakHz) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
+      : (peakHz - minHz) / (maxHz - minHz);
+    pxFrac = Math.max(0, Math.min(1, pxFrac));
+    const px = padL + pxFrac * plotW;
+    const py = padT + (1 - Math.max(0, Math.min(1, (peakDbVal + 90) / 90))) * plotH;
+
+    ctx.fillStyle = "#ffb454";
+    ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,180,84,.4)";
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if ($("fa-stat-peak")) $("fa-stat-peak").textContent = `${peakHz.toFixed(1)} Hz (${peakDbVal.toFixed(1)} dB)`;
+  if ($("fa-stat-centroid")) $("fa-stat-centroid").textContent = `${centroidHz.toFixed(0)} Hz`;
+  if (faHoverFreq !== null && faHoverDb !== null) {
+    if ($("fa-stat-cursor")) $("fa-stat-cursor").textContent = `${faHoverFreq.toFixed(1)} Hz (${faHoverDb.toFixed(1)} dB)`;
+  }
+}
+
+function renderSpectrumAnalyzerPanel() {
+  const backdrop = $("spectrum-analyzer-backdrop");
+  if (!backdrop || backdrop.hidden) return;
+
+  const canvas = $("spectrum-analyzer-canvas");
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cw = rect.width, ch = rect.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  const buffer = state.previewBuffer || state.currentBuffer;
+  if (!buffer) {
+    ctx.fillStyle = "rgba(146,160,177,.6)";
+    ctx.font = "12px 'IBM Plex Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Load a signal to view spectrum (spectrogram)", cw / 2, ch / 2);
+    return;
+  }
+
+  const mono = monoOf(buffer);
+  const sr = buffer.sampleRate;
+  const fftSize = parseInt($("sa-fft-select") ? $("sa-fft-select").value : "1024") || 1024;
+
+  const padL = 40, padB = 22, padT = 14, padR = 14;
+  const plotW = cw - padL - padR;
+  const plotH = ch - padB - padT;
+
+  const targetCols = Math.max(80, Math.floor(plotW));
+  const targetRows = Math.max(60, Math.floor(plotH));
+  const spec = computeSpectrogram(mono, sr, targetCols, targetRows, fftSize);
+
+  const off = document.createElement("canvas");
+  off.width = spec.cols;
+  off.height = spec.rows;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(spec.cols, spec.rows);
+
+  for (let c = 0; c < spec.cols; c++) {
+    for (let r = 0; r < spec.rows; r++) {
+      const v = spec.data[c * spec.rows + r] || 0;
+      const [red, green, blue] = colorRamp(v);
+      const pxIdx = ((spec.rows - 1 - r) * spec.cols + c) * 4;
+      img.data[pxIdx] = red;
+      img.data[pxIdx + 1] = green;
+      img.data[pxIdx + 2] = blue;
+      img.data[pxIdx + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+
+  ctx.drawImage(off, padL, padT, plotW, plotH);
+
+  ctx.strokeStyle = "rgba(255,255,255,.08)";
+  ctx.lineWidth = 1;
+  ctx.font = "9.5px 'IBM Plex Mono', monospace";
+  ctx.fillStyle = "rgba(146,160,177,.6)";
+
+  const minHz = 20, maxHz = sr / 2;
+  const gridFreqs = [100, 500, 1000, 5000, 10000, 20000];
+  gridFreqs.forEach((f) => {
+    if (f > maxHz) return;
+    const normLog = (Math.log10(f) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz));
+    const y = padT + (1 - normLog) * plotH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cw - padR, y); ctx.stroke();
+    ctx.textAlign = "right";
+    const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
+    ctx.fillText(label, padL - 4, y + 3);
+  });
+
+  const dur = buffer.duration;
+  const numTimeTicks = 5;
+  for (let i = 0; i <= numTimeTicks; i++) {
+    const t = (i / numTimeTicks) * dur;
+    const x = padL + (i / numTimeTicks) * plotW;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillText(`${t.toFixed(1)}s`, x, ch - 6);
+  }
+
+  if ($("sa-stat-duration")) $("sa-stat-duration").textContent = `${dur.toFixed(2)} s`;
+  if ($("sa-stat-sr")) $("sa-stat-sr").textContent = `${sr} Hz`;
+
+  if (saHoverTime !== null && saHoverFreq !== null) {
+    if ($("sa-stat-cursor")) $("sa-stat-cursor").textContent = `${saHoverTime.toFixed(2)}s, ${saHoverFreq.toFixed(0)} Hz`;
+  }
 }
 
 /* --------------------------------------------------------------- *
@@ -1092,6 +1866,8 @@ function redrawAll() {
   renderSpectrogram();
   renderStaticMeters();
   if (state.activeEffect) renderDetailPanel();
+  renderFrequencyAnalyzerPanel();
+  renderSpectrumAnalyzerPanel();
 }
 
 function setProcessing(on) {
@@ -1178,7 +1954,7 @@ function renderParamControls(eff, key) {
   if (eff.params.length === 0) {
     const p = document.createElement("p");
     p.style.cssText = "color:var(--text-dim);font-size:12px;margin:0;";
-    p.textContent = "No parameters â€” this module transforms the whole signal the same way every time.";
+    p.textContent = "No parameters — this module transforms the whole signal the same way every time.";
     wrap.appendChild(p);
     return;
   }
@@ -1341,8 +2117,22 @@ function downloadUrl(fileId) { return `${API}/download/${fileId}`; }
 
 async function decodeFileId(fileId) {
   const res = await fetch(downloadUrl(fileId));
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const buf = await res.arrayBuffer();
-  return ac().decodeAudioData(buf.slice(0));
+  const ctx = ac();
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch (_) {}
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const p = ctx.decodeAudioData(buf.slice(0), resolve, reject);
+      if (p && typeof p.then === "function") {
+        p.then(resolve, reject);
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 function getSelectionPayload() {
@@ -1372,9 +2162,9 @@ async function runLivePreview() {
     const params = { ...state.paramValues[key] };
     const selection = getSelectionPayload();
     const meta = await apiApplyEffect(baseFileId, key, params, selection);
-    if (gen !== state.requestGen) return; // superseded by a newer parameter change â€” discard
+    if (gen !== state.requestGen) return; // superseded by a newer parameter change — discard
     const buffer = await decodeFileId(meta.file_id);
-    if (gen !== state.requestGen) return; // superseded while decoding â€” discard
+    if (gen !== state.requestGen) return; // superseded while decoding — discard
 
     state.previewFileId = meta.file_id;
     state.previewBuffer = buffer;
@@ -1399,7 +2189,7 @@ async function runLivePreview() {
 async function applyCurrentEffect() {
   const key = state.activeEffect;
   if (!key) return;
-  setStatus(`Applying ${EFFECTS[key].label}â€¦`);
+  setStatus(`Applying ${EFFECTS[key].label}…`);
   setProcessing(true);
   try {
     let fileId, buffer;
@@ -1411,6 +2201,7 @@ async function applyCurrentEffect() {
       fileId = meta.file_id;
       buffer = await decodeFileId(fileId);
     }
+    state.requestGen++; // invalidate any in-flight preview so it can't overwrite the commit
     state.fileId = fileId;
     state.currentBuffer = buffer;
     state.previewBuffer = null;
@@ -1430,6 +2221,8 @@ async function applyCurrentEffect() {
     setStatus("Ready.");
     closeParamPanel();
     redrawAll();
+    saveSongSnapshot(); // record this song's newly committed (processed) state
+    saveSession();
   } catch (err) {
     setProcessing(false);
     toast(err.message, "error");
@@ -1460,6 +2253,10 @@ function closeParamPanel() {
  * --------------------------------------------------------------- */
 
 async function loadFromUploadResponse(meta, buffer) {
+  // Capture any unsaved live state (e.g. unapplied param tweaks) of the song
+  // currently being edited before the new upload takes over as active.
+  saveSongSnapshot();
+
   state.fileId = meta.file_id;
   state.filename = meta.filename || "sample";
   state.sampleRate = meta.sample_rate;
@@ -1470,31 +2267,26 @@ async function loadFromUploadResponse(meta, buffer) {
   state.previewFileId = null;
   state.appliedEffects = new Set();
   state.activeEffect = null;
+  state.paramValues = {};
   state.selection = null;
   state.selectionOnly = false;
   state.abMode = "original";
   state.view = { start: 0, end: buffer.duration };
   state.spectrogramCache = null;
 
-  $("dropzone").hidden = true;
-  $("viz-stack").hidden = false;
-  $("transport").hidden = false;
-  $("btn-export").disabled = false;
-  $("file-dot").classList.add("on");
-  $("header-filename").textContent = state.filename;
+  // Multi-song: append the new upload as its own song and make it active.
+  state.songs.push({});
+  state.activeSongIdx = state.songs.length - 1;
+  saveSongSnapshot();
+  renderSongTabs();
 
-  buildRack();
-  closeParamPanel();
-  updateAbSwitch();
-  updateSelectionUI();
-  updateHeaderMeta();
-  updateTransportEnabled();
-  redrawAll();
+  applySongUi();
+  saveSession();
   setStatus("Signal loaded.");
 }
 
 async function handleFile(file) {
-  setStatus("Uploadingâ€¦");
+  setStatus("Uploading…");
   try {
     const meta = await apiUpload(file);
     const buffer = await decodeFileId(meta.file_id);
@@ -1507,7 +2299,7 @@ async function handleFile(file) {
 }
 
 async function loadSample(name) {
-  setStatus("Loading sampleâ€¦");
+  setStatus("Loading sample…");
   try {
     const res = await fetch(`sample_wavs/${name}`);
     const blob = await res.blob();
@@ -1532,7 +2324,7 @@ function fmtTime(s) {
 
 function updateHeaderMeta() {
   $("status-meta").textContent = state.currentBuffer
-    ? `${state.sampleRate} Hz Â· ${state.channels === 2 ? "stereo" : "mono"} Â· ${fmtTime(state.duration)}`
+    ? `${state.sampleRate} Hz · ${state.channels === 2 ? "stereo" : "mono"} · ${fmtTime(state.duration)}`
     : "";
   $("tp-duration").textContent = fmtTime(state.duration);
 }
@@ -1593,6 +2385,7 @@ function playheadLoop() {
   if (state.htmlAudio.paused) { playheadRAF = null; return; }
   renderWaveform();
   renderSpectrogram();
+  if (state.activeEffect) renderDetailPanel();
   playheadRAF = requestAnimationFrame(playheadLoop);
 }
 
@@ -1605,9 +2398,9 @@ function updateSelectionUI() {
   $("btn-clear-selection").hidden = !hasSel;
   if (hasSel) {
     const d = state.selection.endS - state.selection.startS;
-    $("selection-text").textContent = `${fmtTime(state.selection.startS)} â†’ ${fmtTime(state.selection.endS)} (${d.toFixed(2)}s)`;
+    $("selection-text").textContent = `${fmtTime(state.selection.startS)} → ${fmtTime(state.selection.endS)} (${d.toFixed(2)}s)`;
   } else {
-    $("selection-text").textContent = "No selection Â· drag on waveform to select";
+    $("selection-text").textContent = "No selection · drag on waveform to select";
   }
 }
 
@@ -1680,6 +2473,50 @@ function wireWaveformInteraction() {
   });
 }
 
+function renderAliasingLab() {
+  ensureAliasingLabPanel();
+  const f = Math.max(1, Number($("alias-freq").value) || 0);
+  const fs = Math.max(100, Number($("alias-sr").value) || 0);
+  const nyquist = fs / 2;
+
+  const nSamples = Math.max(64, Math.round(fs * 0.02));
+  const samples = new Float64Array(nSamples);
+  for (let i = 0; i < nSamples; i++) samples[i] = Math.sin(2 * Math.PI * f * (i / fs));
+
+  const aliasing = f > nyquist;
+  const apparentFreq = aliasedFrequency(f, fs);
+  $("alias-status").innerHTML = aliasing
+    ? `<span style="color:var(--danger);">Aliasing detected</span> — ${f.toFixed(0)} Hz > Nyquist ${nyquist.toFixed(0)} Hz. Aliased frequency: ${apparentFreq.toFixed(1)} Hz`
+    : `<span style="color:var(--ok);">No aliasing</span> — ${f.toFixed(0)} Hz ≤ Nyquist ${nyquist.toFixed(0)} Hz`;
+
+  const dpr = window.devicePixelRatio || 1;
+
+  const size = nextPow2(nSamples);
+  const re = new Float64Array(size), im = new Float64Array(size);
+  for (let i = 0; i < nSamples; i++) re[i] = samples[i] * (0.5 - 0.5 * Math.cos((2*Math.PI*i)/(nSamples-1)));
+  fft(re, im);
+  const half = size / 2;
+  const mags = new Float64Array(half);
+  let maxMag = 1e-9;
+  for (let i = 0; i < half; i++) { mags[i] = Math.hypot(re[i], im[i]); if (mags[i] > maxMag) maxMag = mags[i]; }
+
+  const specEl = $("alias-spectrum");
+  const sRect = specEl.getBoundingClientRect();
+  specEl.width = Math.max(1, Math.round(sRect.width * dpr));
+  specEl.height = Math.max(1, Math.round(90 * dpr));
+  const sctx = specEl.getContext("2d");
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sw = sRect.width, sh = 90;
+  sctx.clearRect(0, 0, sw, sh);
+  const bw = sw / half;
+  sctx.fillStyle = "rgba(155,140,255,.8)";
+  for (let i = 0; i < half; i++) { const barH=(mags[i]/maxMag)*sh; sctx.fillRect((i/half)*sw, sh-barH, Math.max(1,bw), barH); }
+  sctx.strokeStyle = "#ffd166"; sctx.lineWidth = 1.5; sctx.setLineDash([4,3]);
+  sctx.beginPath(); sctx.moveTo(sw-1,0); sctx.lineTo(sw-1,sh); sctx.stroke(); sctx.setLineDash([]);
+  sctx.fillStyle = "#ffd166"; sctx.font = "10px monospace";
+  sctx.fillText(`Nyquist ${nyquist.toFixed(0)} Hz`, Math.max(2, sw - 90), 12);
+}
+
 /* --------------------------------------------------------------- *
  * 23. WIRING                                                        *
  * --------------------------------------------------------------- */
@@ -1695,34 +2532,11 @@ function wire() {
   ["dragleave", "drop"].forEach((ev) =>
     $("dropzone").addEventListener(ev, (e) => { e.preventDefault(); $("dropzone").classList.remove("drag-over"); }));
   $("dropzone").addEventListener("drop", (e) => {
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
-  });
-  ["dragover", "drop"].forEach((ev) => document.body.addEventListener(ev, (e) => e.preventDefault()));
-  document.body.addEventListener("drop", (e) => {
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   });
 
-  $("btn-samples").addEventListener("click", (e) => {
-    e.stopPropagation();
-    $("sample-menu").classList.toggle("open");
-  });
-  document.addEventListener("click", () => $("sample-menu").classList.remove("open"));
-  document.querySelectorAll(".sample-item").forEach((el) => {
-    el.addEventListener("click", (e) => { e.stopPropagation(); loadSample(el.dataset.sample); $("sample-menu").classList.remove("open"); });
-  });
-
-  $("btn-export").addEventListener("click", () => {
-    if (!state.fileId) return;
-    window.open(downloadUrl(state.fileId), "_blank");
-  });
-
-  $("btn-cancel-effect").addEventListener("click", cancelCurrentEffect);
-  $("btn-apply-effect").addEventListener("click", applyCurrentEffect);
-
-  $("live-preview-toggle").addEventListener("change", (e) => {
-    if (e.target.checked && state.activeEffect) scheduleLivePreview();
+  document.querySelectorAll("[data-sample]").forEach((btn) => {
+    btn.addEventListener("click", () => loadSample(btn.dataset.sample));
   });
 
   $("tp-play").addEventListener("click", togglePlay);
@@ -1730,53 +2544,430 @@ function wire() {
     if (!state.htmlAudio.duration) return;
     state.htmlAudio.currentTime = (e.target.value / 1000) * state.htmlAudio.duration;
   });
-  $("tp-selection-only").addEventListener("change", (e) => {
-    state.selectionOnly = e.target.checked && !!state.selection;
-    if (state.activeEffect && $("live-preview-toggle").checked) scheduleLivePreview();
-  });
 
-  document.querySelectorAll(".ab-opt").forEach((el) => {
-    el.addEventListener("click", () => {
-      state.abMode = el.dataset.mode;
+  document.querySelectorAll(".ab-opt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.abMode = btn.dataset.mode;
       updateAbSwitch();
       redrawAll();
     });
   });
 
-  $("btn-zoom-in").addEventListener("click", () => {
-    if (!state.currentBuffer) return;
-    const center = (state.view.start + state.view.end) / 2;
-    setZoom((state.view.end - state.view.start) / 1.6, center);
-  });
-  $("btn-zoom-out").addEventListener("click", () => {
-    if (!state.currentBuffer) return;
-    const center = (state.view.start + state.view.end) / 2;
-    setZoom((state.view.end - state.view.start) * 1.6, center);
-  });
-  $("btn-zoom-fit").addEventListener("click", () => {
-    if (!state.currentBuffer) return;
-    state.view = { start: 0, end: state.currentBuffer.duration };
-    redrawAll();
+  $("btn-apply-effect").addEventListener("click", applyCurrentEffect);
+  $("btn-cancel-effect").addEventListener("click", cancelCurrentEffect);
+  $("btn-export").addEventListener("click", async () => {
+    if (!state.fileId) return;
+    const url = downloadUrl(state.fileId);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = state.filename ? state.filename.replace(/\.[^.]+$/, "") + "_processed.wav" : "signal_lab_processed.wav";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (err) {
+      // Fallback: direct navigation if blob/fetch fails (e.g. huge files on some browsers).
+      window.location.href = url;
+    }
   });
 
+  $("btn-zoom-in").addEventListener("click", () => setZoom((state.view.end - state.view.start) / 1.5, (state.view.start + state.view.end) / 2));
+  $("btn-zoom-out").addEventListener("click", () => setZoom((state.view.end - state.view.start) * 1.5, (state.view.start + state.view.end) / 2));
+  $("btn-zoom-reset").addEventListener("click", () => {
+    if (state.currentBuffer) { state.view = { start: 0, end: state.currentBuffer.duration }; redrawAll(); }
+  });
   $("btn-clear-selection").addEventListener("click", () => {
     state.selection = null;
     state.selectionOnly = false;
-    $("tp-selection-only").checked = false;
     updateSelectionUI();
-    redrawAll();
-    if (state.activeEffect && $("live-preview-toggle").checked) scheduleLivePreview();
+    renderWaveform();
   });
 
   wireWaveformInteraction();
+  window.addEventListener("resize", () => redrawAll());
 
-  window.addEventListener("resize", () => {
-    if (!state.currentBuffer) return;
-    redrawAll();
+  // View menu & Analyzer panels wiring
+  if ($("btn-view-freq")) {
+    $("btn-view-freq").addEventListener("click", () => {
+      $("freq-analyzer-backdrop").hidden = false;
+      renderFrequencyAnalyzerPanel();
+    });
+  }
+  if ($("btn-view-spectrum")) {
+    $("btn-view-spectrum").addEventListener("click", () => {
+      $("spectrum-analyzer-backdrop").hidden = false;
+      renderSpectrumAnalyzerPanel();
+    });
+  }
+  if ($("btn-view-mixer")) {
+    $("btn-view-mixer").addEventListener("click", () => {
+      if ($("btn-open-mixer")) $("btn-open-mixer").click();
+    });
+  }
+
+  if ($("btn-close-freq-analyzer")) {
+    $("btn-close-freq-analyzer").addEventListener("click", () => {
+      $("freq-analyzer-backdrop").hidden = true;
+    });
+  }
+  if ($("btn-close-spectrum-analyzer")) {
+    $("btn-close-spectrum-analyzer").addEventListener("click", () => {
+      $("spectrum-analyzer-backdrop").hidden = true;
+    });
+  }
+
+  if ($("fa-channel-select")) $("fa-channel-select").addEventListener("change", renderFrequencyAnalyzerPanel);
+  if ($("fa-fft-select")) $("fa-fft-select").addEventListener("change", renderFrequencyAnalyzerPanel);
+  if ($("fa-scale-select")) $("fa-scale-select").addEventListener("change", renderFrequencyAnalyzerPanel);
+  if ($("sa-fft-select")) $("sa-fft-select").addEventListener("change", renderSpectrumAnalyzerPanel);
+
+  const faCanvas = $("freq-analyzer-canvas");
+  if (faCanvas) {
+    faCanvas.addEventListener("mousemove", (e) => {
+      const rect = faCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const padL = 40, padR = 14;
+      const plotW = rect.width - padL - padR;
+      const buffer = state.previewBuffer || state.currentBuffer;
+      if (!buffer || plotW <= 0) return;
+      const sr = buffer.sampleRate;
+      const minHz = 20, maxHz = sr / 2;
+      const isLog = ($("fa-scale-select") ? $("fa-scale-select").value : "log") === "log";
+      let frac = (x - padL) / plotW;
+      frac = Math.max(0, Math.min(1, frac));
+      faHoverFreq = isLog
+        ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
+        : minHz + frac * (maxHz - minHz);
+      const y = e.clientY - rect.top;
+      const padT = 14, padB = 22;
+      const plotH = rect.height - padT - padB;
+      let yFrac = (y - padT) / plotH;
+      yFrac = Math.max(0, Math.min(1, yFrac));
+      faHoverDb = (1 - yFrac) * 90 - 90;
+      renderFrequencyAnalyzerPanel();
+    });
+    faCanvas.addEventListener("mouseleave", () => {
+      faHoverFreq = null; faHoverDb = null;
+      if ($("fa-stat-cursor")) $("fa-stat-cursor").textContent = "-";
+      renderFrequencyAnalyzerPanel();
+    });
+  }
+
+  const saCanvas = $("spectrum-analyzer-canvas");
+  if (saCanvas) {
+    saCanvas.addEventListener("mousemove", (e) => {
+      const rect = saCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const padL = 40, padR = 14, padT = 14, padB = 22;
+      const plotW = rect.width - padL - padR;
+      const plotH = rect.height - padT - padB;
+      const buffer = state.previewBuffer || state.currentBuffer;
+      if (!buffer || plotW <= 0 || plotH <= 0) return;
+      const dur = buffer.duration;
+      let xFrac = (x - padL) / plotW;
+      xFrac = Math.max(0, Math.min(1, xFrac));
+      saHoverTime = xFrac * dur;
+
+      let yFrac = (y - padT) / plotH;
+      yFrac = Math.max(0, Math.min(1, yFrac));
+      const sr = buffer.sampleRate;
+      const minHz = 20, maxHz = sr / 2;
+      saHoverFreq = Math.pow(10, Math.log10(minHz) + (1 - yFrac) * (Math.log10(maxHz) - Math.log10(minHz)));
+      renderSpectrumAnalyzerPanel();
+    });
+    saCanvas.addEventListener("mouseleave", () => {
+      saHoverTime = null; saHoverFreq = null;
+      if ($("sa-stat-cursor")) $("sa-stat-cursor").textContent = "-";
+      renderSpectrumAnalyzerPanel();
+    });
+  }
+}
+
+/* --------------------------------------------------------------- *
+ * 24. SESSION PERSISTENCE (survives browser refresh)                *
+ * --------------------------------------------------------------- */
+
+/* --------------------------------------------------------------- *
+ * Multi-song helpers — snapshots carry metadata only (no AudioBuffer) *
+ * --------------------------------------------------------------- */
+
+/** Deep-ish copy of paramValues (per-song effect settings) so two songs
+ *  never share a mutable object and overwrite each other's state. */
+function cloneParams(pv) {
+  const out = {};
+  if (!pv || typeof pv !== "object") return out;
+  for (const k of Object.keys(pv)) {
+    const inner = pv[k];
+    if (inner && typeof inner === "object") {
+      out[k] = {};
+      for (const pk of Object.keys(inner)) {
+        const v = inner[pk];
+        out[k][pk] = Array.isArray(v) ? v.slice() : v;
+      }
+    } else {
+      out[k] = inner;
+    }
+  }
+  return out;
+}
+
+/** Snapshot the currently-active song's committed state into state.songs[activeSongIdx]. */
+function saveSongSnapshot() {
+  if (!state.fileId) return null;
+  const snap = {
+    fileId: state.fileId,
+    filename: state.filename || "song",
+    sampleRate: state.sampleRate,
+    duration: state.duration,
+    channels: state.channels,
+    appliedEffects: Array.from(state.appliedEffects || []),
+    paramValues: cloneParams(state.paramValues || {}),
+    view: state.view && state.view.end ? { ...state.view } : { start: 0, end: state.duration },
+    selection: state.selection ? { startS: state.selection.startS, endS: state.selection.endS } : null,
+    selectionOnly: !!state.selectionOnly,
+    abMode: state.abMode,
+  };
+  if (state.activeSongIdx >= 0 && state.activeSongIdx < state.songs.length) {
+    state.songs[state.activeSongIdx] = snap;
+  }
+  return snap;
+}
+
+/** Copy a song snapshot's metadata into the live state (AudioBuffer is assigned
+ *  separately by the caller after (re)decoding the committed fileId). */
+function restoreStateFromSong(snap) {
+  if (!snap) return;
+  state.fileId = snap.fileId || null;
+  state.filename = snap.filename || "song";
+  state.sampleRate = snap.sampleRate || 44100;
+  state.duration = snap.duration || 0;
+  state.channels = snap.channels || 1;
+  state.currentBuffer = null; // caller assigns after decode
+  state.previewBuffer = null;
+  state.previewFileId = null;
+  state.appliedEffects = new Set(snap.appliedEffects || []);
+  state.activeEffect = null;
+  state.paramValues = cloneParams(snap.paramValues || {});
+  state.view = snap.view && snap.view.end > snap.view.start
+    ? { ...snap.view }
+    : { start: 0, end: state.duration };
+  state.selection = snap.selection ? { startS: snap.selection.startS, endS: snap.selection.endS } : null;
+  state.selectionOnly = !!snap.selectionOnly;
+  state.abMode = "original"; // previews are transient and never restored
+  state.spectrogramCache = null;
+}
+
+/** Rebuild the per-song UI visuals once a song's buffer is active. */
+function applySongUi() {
+  $("dropzone").hidden = true;
+  $("viz-stack").hidden = false;
+  $("transport").hidden = false;
+  $("btn-export").disabled = false;
+  $("file-dot").classList.add("on");
+  $("header-filename").textContent = state.filename || "song";
+  buildRack();
+  closeParamPanel();
+  updateAbSwitch();
+  updateSelectionUI();
+  updateHeaderMeta();
+  updateTransportEnabled();
+  redrawAll();
+}
+
+/** Render the song tab bar. */
+function renderSongTabs() {
+  const tabs = $("song-tabs");
+  if (!tabs) return;
+  tabs.innerHTML = "";
+  tabs.hidden = !state.songs.length;
+  state.songs.forEach((s, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "song-tab" + (i === state.activeSongIdx ? " active" : "");
+    const label = s.filename || `Song ${i + 1}`;
+    btn.textContent = label;
+    btn.title = label;
+    btn.addEventListener("click", () => switchToSong(i));
+    tabs.appendChild(btn);
   });
 }
 
+/** Switch the active editing target to another loaded song. */
+async function switchToSong(idx) {
+  if (idx === state.activeSongIdx && state.currentBuffer) return;
+  if (idx < 0 || idx >= state.songs.length) return;
+  saveSongSnapshot();               // remember the song we're leaving
+  const target = state.songs[idx];
+  state.activeSongIdx = idx;
+  state.requestGen++;               // invalidate in-flight previews from the old song
+  const token = state.requestGen;   // guard against a newer switch superseding the decode
+  restoreStateFromSong(target);     // apply target's metadata immediately (synchronous)
+  renderSongTabs();
+  setProcessing(true);
+  setStatus(`Loading ${target.filename || "song"}…`);
+  try {
+    const buffer = await decodeFileId(target.fileId); // existing decode path
+    if (token !== state.requestGen) return;           // superseded by a newer switch
+    state.currentBuffer = buffer;
+    applySongUi();
+    setProcessing(false);
+    setStatus("Ready.");
+    saveSession();
+  } catch (err) {
+    if (token !== state.requestGen) return;
+    setProcessing(false);
+    setStatus("Ready.");
+    toast(`Could not load ${target.filename || "song"} — ${err.message}`, "error");
+  }
+}
+
+function saveSession() {
+  if (!state.fileId && !state.songs.length) return;
+  try {
+    const active = (state.activeSongIdx >= 0 && state.activeSongIdx < state.songs.length)
+      ? state.songs[state.activeSongIdx]
+      : null;
+    const payload = {
+      // Active-song fields kept for backward compatibility with older sessions.
+      fileId: active ? active.fileId : state.fileId,
+      filename: active ? active.filename : state.filename,
+      sampleRate: active ? active.sampleRate : state.sampleRate,
+      duration: active ? active.duration : state.duration,
+      channels: active ? active.channels : state.channels,
+      appliedEffects: active ? active.appliedEffects : Array.from(state.appliedEffects || []),
+      songs: state.songs,
+      activeSongIdx: state.activeSongIdx,
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+  } catch (_) { /* storage full or unavailable — ignore */ }
+}
+
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
+}
+
+/**
+ * Gesture-independent decode for session restore.
+ * At cold page load (before any user interaction) the main AudioContext from
+ * ac() can be stuck suspended, and decodeAudioData on it can reject — which
+ * is exactly why refresh used to lose the session even though the file still
+ * exists on the server. An OfflineAudioContext decodes without depending on
+ * the main context's running/autoplay state, so restore is reliable on reload.
+ */
+async function decodeForRestore(fileId) {
+  const res = await fetch(downloadUrl(fileId));
+  if (!res.ok) throw new Error(`session file not found (${res.status})`);
+  const buf = await res.arrayBuffer();
+  const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (OfflineCtx) {
+    const ctx = new OfflineCtx(1, 2, 44100);
+    return ctx.decodeAudioData(buf.slice(0));
+  }
+  return ac().decodeAudioData(buf.slice(0));
+}
+
+async function restoreSession() {
+  let raw = null;
+  try { raw = localStorage.getItem(SESSION_KEY); } catch (_) { return; }
+  if (!raw) return;
+  let saved;
+  try { saved = JSON.parse(raw); } catch (_) { clearSession(); return; }
+  if (!saved) { clearSession(); return; }
+
+  // Build the song list. New sessions store `songs`; upgrade the older
+  // single-song shape into a one-song list for backward compatibility.
+  let songs = Array.isArray(saved.songs) ? saved.songs.filter((s) => s && s.fileId) : null;
+  if (!songs || !songs.length) {
+    if (saved.fileId) {
+      songs = [{
+        fileId: saved.fileId,
+        filename: saved.filename || "song",
+        sampleRate: saved.sampleRate,
+        duration: saved.duration,
+        channels: saved.channels,
+        appliedEffects: saved.appliedEffects || [],
+        paramValues: {},
+        view: { start: 0, end: saved.duration || 0 },
+        selection: null,
+        selectionOnly: false,
+        abMode: "original",
+      }];
+    } else {
+      clearSession();
+      return;
+    }
+  }
+  state.songs = songs;
+  state.activeSongIdx = Math.min(Math.max(0, saved.activeSongIdx | 0), songs.length - 1);
+  restoreStateFromSong(state.songs[state.activeSongIdx]);
+  $("dropzone").hidden = true;
+  $("viz-stack").hidden = false;
+  $("transport").hidden = false;
+  renderSongTabs();
+
+  setStatus("Restoring session…");
+
+  const tryLoadSong = async (song) => {
+    try {
+      return { ok: true, buffer: await decodeFileId(song.fileId) };
+    } catch (err) {
+      const isExpired = err && err.message && (err.message.includes("404") || err.message.includes("405"));
+      return { ok: false, expired: isExpired };
+    }
+  };
+
+  const finishRestore = (idx, buffer) => {
+    state.activeSongIdx = idx;
+    restoreStateFromSong(state.songs[idx]);
+    state.currentBuffer = buffer;
+    applySongUi();
+    renderSongTabs();
+    saveSession();
+    setStatus("Session restored.");
+  };
+
+  // Prefer the previously-active song; fall back to the first decodable one.
+  const order = songs.map((_, i) => i);
+  order.sort((a, b) => (a === state.activeSongIdx ? -1 : b === state.activeSongIdx ? 1 : a - b));
+
+  let anyTransient = false;
+  for (const i of order) {
+    const res = await tryLoadSong(songs[i]);
+    if (res.ok) { finishRestore(i, res.buffer); return; }
+    if (!res.expired) anyTransient = true;
+  }
+
+  if (anyTransient) {
+    toast("Could not restore audio — refresh to retry.", "error");
+    setStatus("Ready.");
+    return;
+  }
+
+  clearSession(); // every song's server file is gone — nothing left to restore
+  $("dropzone").hidden = false;
+  $("viz-stack").hidden = true;
+  $("transport").hidden = true;
+  toast("Previous session expired — please reload your audio.", "error");
+  setStatus("Ready.");
+}
+
+/* --------------------------------------------------------------- *
+ * 25. INIT                                                          *
+ * --------------------------------------------------------------- */
+
 wire();
 setStatus("Ready.");
-})();
+ensureAliasingLabPanel();
+renderAliasingLab();
+aliasRAF = requestAnimationFrame(aliasWaveTick);
+ensureUploadedAliasingPanel();
+restoreSession();
 
+
+
+})();

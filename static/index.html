@@ -37,6 +37,13 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Open
       </button>
+      <button class="btn btn-ghost" id="btn-view" title="View options">View ▾
+        <div class="sample-menu" id="view-menu">
+          <div class="sample-item" id="btn-view-freq">Frequency Analyzer</div>
+          <div class="sample-item" id="btn-view-spectrum">Spectrum Analyzer</div>
+          <div class="sample-item" id="btn-view-mixer">Multitrack Mixer</div>
+        </div>
+      </button>
       <button class="btn btn-ghost" id="btn-samples" title="Try a sample">Samples ▾
         <div class="sample-menu" id="sample-menu">
           <div class="sample-item" data-sample="test_sine_mono.wav">Mono sine tone</div>
@@ -78,6 +85,9 @@
 
       <!-- Visualization stack (hidden until a file is loaded) -->
       <div class="viz-stack" id="viz-stack" hidden>
+
+        <!-- Song tabs (multiple uploaded songs; injected by app.js) -->
+        <div class="song-tabs" id="song-tabs" hidden></div>
 
         <!-- Toolbar: A/B, zoom, selection -->
         <div class="viz-toolbar">
@@ -236,6 +246,79 @@
     <div class="mixer-channels" id="mixer-channels"><!-- channel strips injected by mixer.js --></div>
 
     <div class="mixer-master" id="mixer-master"><!-- Main / Monitor bus strips injected by mixer.js --></div>
+  </div>
+</div>
+
+<!-- ============ FREQUENCY ANALYZER MODAL ============ -->
+<div class="mixer-backdrop" id="freq-analyzer-backdrop" hidden>
+  <div class="mixer-modal panel" style="max-width:860px;">
+    <div class="mixer-modal-head">
+      <span class="panel-label">Frequency Analyzer</span>
+      <span class="panel-sub">FFT Spectrum Analysis · 20 Hz – 20 kHz</span>
+      <button class="mini-btn" id="btn-close-freq-analyzer" title="Close" style="margin-left:auto;">✕</button>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
+        Channel:
+        <select id="fa-channel-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+          <option value="mono">Mono (Mix)</option>
+          <option value="left">Left (Ch 1)</option>
+          <option value="right">Right (Ch 2)</option>
+        </select>
+      </label>
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
+        FFT Size:
+        <select id="fa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+          <option value="1024">1024</option>
+          <option value="2048" selected>2048</option>
+          <option value="4096">4096</option>
+        </select>
+      </label>
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
+        Scale:
+        <select id="fa-scale-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+          <option value="log" selected>Logarithmic</option>
+          <option value="linear">Linear</option>
+        </select>
+      </label>
+    </div>
+    <div class="canvas-wrap" style="height:320px;position:relative;background:#10151d;border:1px solid var(--hairline);border-radius:var(--radius-md);">
+      <canvas id="freq-analyzer-canvas"></canvas>
+    </div>
+    <div style="display:flex;gap:16px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:4px;" id="freq-analyzer-stats">
+      <span>Peak Freq: <b id="fa-stat-peak" style="color:var(--trace-a);">-</b></span>
+      <span>Spectral Centroid: <b id="fa-stat-centroid" style="color:var(--trace-b);">-</b></span>
+      <span>Cursor: <b id="fa-stat-cursor" style="color:var(--text-hi);">-</b></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SPECTRUM ANALYZER MODAL ============ -->
+<div class="mixer-backdrop" id="spectrum-analyzer-backdrop" hidden>
+  <div class="mixer-modal panel" style="max-width:920px;">
+    <div class="mixer-modal-head">
+      <span class="panel-label">Spectrum Analyzer (Spectrogram)</span>
+      <span class="panel-sub">STFT Time-Frequency Analysis</span>
+      <button class="mini-btn" id="btn-close-spectrum-analyzer" title="Close" style="margin-left:auto;">✕</button>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
+        FFT Window:
+        <select id="sa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+          <option value="512">512</option>
+          <option value="1024" selected>1024</option>
+          <option value="2048">2048</option>
+        </select>
+      </label>
+    </div>
+    <div class="canvas-wrap" style="height:340px;position:relative;background:#10151d;border:1px solid var(--hairline);border-radius:var(--radius-md);">
+      <canvas id="spectrum-analyzer-canvas"></canvas>
+    </div>
+    <div style="display:flex;gap:16px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:4px;" id="spectrum-analyzer-stats">
+      <span>Duration: <b id="sa-stat-duration" style="color:var(--text-hi);">-</b></span>
+      <span>Sample Rate: <b id="sa-stat-sr" style="color:var(--text-hi);">-</b></span>
+      <span>Cursor: <b id="sa-stat-cursor" style="color:var(--trace-a);">-</b></span>
+    </div>
   </div>
 </div>
 

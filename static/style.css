@@ -115,6 +115,8 @@ input{ font:inherit; }
   box-shadow:0 12px 28px rgba(0,0,0,.45);
   display:none; flex-direction:column; z-index:50;
 }
+.btn-ghost:hover .sample-menu,
+.btn-ghost:focus-within .sample-menu,
 .sample-menu.open{ display:flex; }
 .sample-item{ padding:8px 10px; border-radius:var(--radius-sm); font-size:12.5px; color:var(--text-mid); cursor:pointer; transition:background .12s, color .12s; }
 .sample-item:hover{ background:var(--bg-panel-2); color:var(--text-hi); }
@@ -138,8 +140,7 @@ input{ font:inherit; }
 .rack-item.applied .ri-applied{ opacity:1; }
 
 /* ===================== STAGE (center, hero) ===================== */
-.stage{ min-width:0; min-height:0; display:flex; flex-direction:column; padding:14px 16px; gap:10px; overflow:hidden; }
-
+.stage{ min-width:0; min-height:0; display:flex; flex-direction:column; padding:14px 16px; gap:10px; overflow-y:auto; }
 .dropzone{
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:10px; color:var(--text-dim);
@@ -152,8 +153,17 @@ input{ font:inherit; }
 .dz-title{ font:600 15px var(--ff-display); color:var(--text-mid); margin:0; }
 .dz-sub{ font:12px var(--ff-body); margin:0; }
 
-.viz-stack{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }
-
+.viz-stack{ flex:1 0 auto; min-height:0; display:flex; flex-direction:column; gap:10px; }
+/* --- multi-song tabs --- */
+.song-tabs{ display:flex; align-items:center; gap:6px; overflow-x:auto; padding:2px 1px; }
+.song-tab{
+  flex:0 0 auto; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  border:1px solid var(--hairline); background:var(--bg-panel); color:var(--text-mid);
+  font:600 11px var(--ff-mono); letter-spacing:.03em;
+  padding:5px 12px; border-radius:999px; cursor:pointer; transition:background .13s, border-color .13s, color .13s;
+}
+.song-tab:hover{ background:var(--bg-raised); color:var(--text-hi); }
+.song-tab.active{ background:var(--trace-a); border-color:var(--trace-a); color:#231404; }
 /* --- toolbar --- */
 .viz-toolbar{
   flex:0 0 auto; display:flex; align-items:center; gap:12px;
@@ -236,8 +246,7 @@ input{ font:inherit; }
 .meter-readout b{ color:var(--text-hi); font-size:10.5px; }
 
 /* ===================== TRANSPORT ===================== */
-.transport{ flex:0 0 auto; display:flex; align-items:center; gap:12px; background:var(--bg-panel); border:1px solid var(--hairline); border-radius:var(--radius-lg); padding:10px 14px; }
-.tp-btn{ width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--trace-a); color:#231404; border:none; cursor:pointer; flex:0 0 auto; transition:transform .1s, background .15s; }
+.transport{ flex:0 0 auto; display:flex; align-items:center; gap:12px; background:var(--bg-panel); border:1px solid var(--hairline); border-radius:var(--radius-lg); padding:10px 14px; flex-shrink:0; }.tp-btn{ width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--trace-a); color:#231404; border:none; cursor:pointer; flex:0 0 auto; transition:transform .1s, background .15s; }
 .tp-btn:hover{ background:#ffc678; }
 .tp-btn:active{ transform:scale(.94); }
 .tp-time{ font:12px var(--ff-mono); color:var(--text-hi); min-width:80px; }
