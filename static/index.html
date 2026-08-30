@@ -37,14 +37,16 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Open
       </button>
-      <button class="btn btn-ghost" id="btn-view" title="View options">View ▾
+      <div class="dropdown" id="dropdown-view">
+        <button class="btn btn-ghost" id="btn-view" title="View options" type="button">View ▾</button>
         <div class="sample-menu" id="view-menu">
           <div class="sample-item" id="btn-view-freq">Frequency Analyzer</div>
           <div class="sample-item" id="btn-view-spectrum">Spectrum Analyzer</div>
           <div class="sample-item" id="btn-view-mixer">Multitrack Mixer</div>
         </div>
-      </button>
-      <button class="btn btn-ghost" id="btn-samples" title="Try a sample">Samples ▾
+      </div>
+      <div class="dropdown" id="dropdown-samples">
+        <button class="btn btn-ghost" id="btn-samples" title="Try a sample" type="button">Samples ▾</button>
         <div class="sample-menu" id="sample-menu">
           <div class="sample-item" data-sample="test_sine_mono.wav">Mono sine tone</div>
           <div class="sample-item" data-sample="test_sine_stereo.wav">Stereo sine tone</div>
@@ -52,11 +54,19 @@
           <div class="sample-item" data-sample="test_noise.wav">Noise sample</div>
           <div class="sample-item" data-sample="test_silence.wav">Silence + tone</div>
         </div>
-      </button>
+      </div>
       <button class="btn btn-ghost" id="btn-open-mixer" title="Concert Sound Mixer">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V10M4 6V3M12 21v-6M12 11V3M20 21v-4M20 13V3"/><circle cx="4" cy="8" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="20" cy="15" r="2"/></svg>
         Mixer
       </button>
+      <a href="labs.html" class="btn btn-ghost" id="btn-nav-labs" title="Signal Labs — Interactive Experiments" style="text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        Signal Labs
+      </a>
+      <a href="speed-pitch.html" class="btn btn-ghost" id="btn-nav-speed" title="Audio Speed, Pitch & Resampling Visualizer" style="text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Speed & Pitch
+      </a>
       <button class="btn btn-solid" id="btn-export" disabled title="Download processed WAV">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
@@ -251,43 +261,52 @@
 
 <!-- ============ FREQUENCY ANALYZER MODAL ============ -->
 <div class="mixer-backdrop" id="freq-analyzer-backdrop" hidden>
-  <div class="mixer-modal panel" style="max-width:860px;">
+  <div class="mixer-modal panel" style="max-width:920px;">
     <div class="mixer-modal-head">
-      <span class="panel-label">Frequency Analyzer</span>
-      <span class="panel-sub">FFT Spectrum Analysis · 20 Hz – 20 kHz</span>
+      <span class="panel-label">Real-Time Frequency Analyzer</span>
+      <span class="panel-sub">Live Moving-Frame FFT · 20 Hz – 20 kHz · Peak Tracking</span>
       <button class="mini-btn" id="btn-close-freq-analyzer" title="Close" style="margin-left:auto;">✕</button>
     </div>
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
-        Channel:
-        <select id="fa-channel-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
-          <option value="mono">Mono (Mix)</option>
-          <option value="left">Left (Ch 1)</option>
-          <option value="right">Right (Ch 2)</option>
-        </select>
-      </label>
-      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
-        FFT Size:
-        <select id="fa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
-          <option value="1024">1024</option>
-          <option value="2048" selected>2048</option>
-          <option value="4096">4096</option>
-        </select>
-      </label>
-      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
-        Scale:
-        <select id="fa-scale-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
-          <option value="log" selected>Logarithmic</option>
-          <option value="linear">Linear</option>
-        </select>
-      </label>
+    
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;justify-content:space-between;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="font:700 10px var(--ff-mono);color:var(--text-dim);letter-spacing:.08em;">RANGE:</span>
+        <button class="mini-btn fa-range-btn active" data-range="full">Full (20-20k)</button>
+        <button class="mini-btn fa-range-btn" data-range="bass">Bass (20-250Hz)</button>
+        <button class="mini-btn fa-range-btn" data-range="mid">Mid (250-4kHz)</button>
+        <button class="mini-btn fa-range-btn" data-range="high">High (4k-20kHz)</button>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:5px;">
+          Channel:
+          <select id="fa-channel-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+            <option value="mono">Mono (Mix)</option>
+            <option value="left">Left (Ch 1)</option>
+            <option value="right">Right (Ch 2)</option>
+          </select>
+        </label>
+        <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:5px;">
+          FFT:
+          <select id="fa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+            <option value="1024">1024</option>
+            <option value="2048" selected>2048</option>
+            <option value="4096">4096</option>
+          </select>
+        </label>
+        <button class="mini-btn" id="fa-btn-freeze" title="Freeze current analysis snapshot">❄ Freeze</button>
+      </div>
     </div>
-    <div class="canvas-wrap" style="height:320px;position:relative;background:#10151d;border:1px solid var(--hairline);border-radius:var(--radius-md);">
+
+    <div class="canvas-wrap" style="height:330px;position:relative;background:#06080d;border:1px solid var(--hairline-bright);border-radius:var(--radius-md);box-shadow:inset 0 2px 8px rgba(0,0,0,0.7);">
       <canvas id="freq-analyzer-canvas"></canvas>
     </div>
-    <div style="display:flex;gap:16px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:4px;" id="freq-analyzer-stats">
-      <span>Peak Freq: <b id="fa-stat-peak" style="color:var(--trace-a);">-</b></span>
-      <span>Spectral Centroid: <b id="fa-stat-centroid" style="color:var(--trace-b);">-</b></span>
+
+    <div style="display:flex;gap:14px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:8px;flex-wrap:wrap;border-top:1px solid var(--hairline-soft);margin-top:6px;" id="freq-analyzer-stats">
+      <span>Dominant: <b id="fa-stat-peak" style="color:var(--trace-a);">-</b></span>
+      <span>Peak Level: <b id="fa-stat-level" style="color:var(--accent-cyan);">-</b></span>
+      <span>Band: <b id="fa-stat-band" style="color:var(--ok);">-</b></span>
+      <span>Centroid: <b id="fa-stat-centroid" style="color:var(--trace-b);">-</b></span>
       <span>Cursor: <b id="fa-stat-cursor" style="color:var(--text-hi);">-</b></span>
     </div>
   </div>
@@ -295,29 +314,58 @@
 
 <!-- ============ SPECTRUM ANALYZER MODAL ============ -->
 <div class="mixer-backdrop" id="spectrum-analyzer-backdrop" hidden>
-  <div class="mixer-modal panel" style="max-width:920px;">
+  <div class="mixer-modal panel" style="max-width:960px;">
     <div class="mixer-modal-head">
-      <span class="panel-label">Spectrum Analyzer (Spectrogram)</span>
-      <span class="panel-sub">STFT Time-Frequency Analysis</span>
+      <span class="panel-label">Real-Time Spectrum Analyzer</span>
+      <span class="panel-sub">Animated FFT Spectrum & STFT Waterfall Spectrogram</span>
       <button class="mini-btn" id="btn-close-spectrum-analyzer" title="Close" style="margin-left:auto;">✕</button>
     </div>
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-      <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:6px;">
-        FFT Window:
-        <select id="sa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
-          <option value="512">512</option>
-          <option value="1024" selected>1024</option>
-          <option value="2048">2048</option>
-        </select>
-      </label>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;justify-content:space-between;">
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span style="font:700 10px var(--ff-mono);color:var(--text-dim);letter-spacing:.08em;">VIEW:</span>
+        <button class="mini-btn sa-view-btn active" data-view="spectrum">Live Spectrum</button>
+        <button class="mini-btn sa-view-btn" data-view="spectrogram">Spectrogram (STFT)</button>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:5px;">
+          FFT:
+          <select id="sa-fft-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+            <option value="1024">1024</option>
+            <option value="2048" selected>2048</option>
+            <option value="4096">4096</option>
+            <option value="8192">8192</option>
+          </select>
+        </label>
+        <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:5px;">
+          Display:
+          <select id="sa-display-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+            <option value="bars" selected>Bars</option>
+            <option value="line">Line Trace</option>
+          </select>
+        </label>
+        <label style="font:11px var(--ff-mono);color:var(--text-mid);display:flex;align-items:center;gap:5px;">
+          Scale:
+          <select id="sa-scale-select" style="background:var(--bg-raised);color:var(--text-hi);border:1px solid var(--hairline);border-radius:4px;padding:3px 6px;font:11px var(--ff-mono);">
+            <option value="log" selected>Logarithmic</option>
+            <option value="linear">Linear</option>
+          </select>
+        </label>
+        <button class="mini-btn" id="sa-btn-reset-peaks" title="Reset Peak Hold">Reset Peaks</button>
+      </div>
     </div>
-    <div class="canvas-wrap" style="height:340px;position:relative;background:#10151d;border:1px solid var(--hairline);border-radius:var(--radius-md);">
+
+    <div class="canvas-wrap" style="height:340px;position:relative;background:#06080d;border:1px solid var(--hairline-bright);border-radius:var(--radius-md);box-shadow:inset 0 2px 8px rgba(0,0,0,0.7);">
       <canvas id="spectrum-analyzer-canvas"></canvas>
     </div>
-    <div style="display:flex;gap:16px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:4px;" id="spectrum-analyzer-stats">
+
+    <div style="display:flex;gap:16px;font:11px var(--ff-mono);color:var(--text-mid);padding-top:8px;flex-wrap:wrap;border-top:1px solid var(--hairline-soft);margin-top:6px;" id="spectrum-analyzer-stats">
+      <span>Live Peak: <b id="sa-stat-peak" style="color:var(--trace-a);">-</b></span>
+      <span>Peak Level: <b id="sa-stat-level" style="color:var(--accent-cyan);">-</b></span>
       <span>Duration: <b id="sa-stat-duration" style="color:var(--text-hi);">-</b></span>
       <span>Sample Rate: <b id="sa-stat-sr" style="color:var(--text-hi);">-</b></span>
-      <span>Cursor: <b id="sa-stat-cursor" style="color:var(--trace-a);">-</b></span>
+      <span>Cursor: <b id="sa-stat-cursor" style="color:var(--ok);">-</b></span>
     </div>
   </div>
 </div>

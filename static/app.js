@@ -1599,6 +1599,51 @@ let faHoverDb = null;
 let saHoverTime = null;
 let saHoverFreq = null;
 
+let faRangeMode = "full"; // "full" | "bass" | "mid" | "high"
+let faFrozen = false;
+let faFrozenData = null;
+
+let saViewMode = "spectrum"; // "spectrum" | "spectrogram"
+let saDisplayMode = "bars";   // "bars" | "line"
+let saScaleMode = "log";     // "log" | "linear"
+let saPeakHolds = null;
+const saPeakDecay = 0.96;
+
+let modalAnalyzerRAF = null;
+
+function ensureAnalyzerLoop() {
+  const fBack = $("freq-analyzer-backdrop");
+  const sBack = $("spectrum-analyzer-backdrop");
+  const isAnyOpen = (fBack && !fBack.hidden) || (sBack && !sBack.hidden);
+
+  if (isAnyOpen) {
+    if (!modalAnalyzerRAF) {
+      modalAnalyzerRAF = requestAnimationFrame(modalAnalyzerLoop);
+    }
+  } else {
+    if (modalAnalyzerRAF) {
+      cancelAnimationFrame(modalAnalyzerRAF);
+      modalAnalyzerRAF = null;
+    }
+  }
+}
+
+function modalAnalyzerLoop() {
+  const fBack = $("freq-analyzer-backdrop");
+  const sBack = $("spectrum-analyzer-backdrop");
+  const isAnyOpen = (fBack && !fBack.hidden) || (sBack && !sBack.hidden);
+
+  if (!isAnyOpen) {
+    modalAnalyzerRAF = null;
+    return;
+  }
+
+  if (fBack && !fBack.hidden) renderFrequencyAnalyzerPanel();
+  if (sBack && !sBack.hidden) renderSpectrumAnalyzerPanel();
+
+  modalAnalyzerRAF = requestAnimationFrame(modalAnalyzerLoop);
+}
+
 function renderFrequencyAnalyzerPanel() {
   const backdrop = $("freq-analyzer-backdrop");
   if (!backdrop || backdrop.hidden) return;
@@ -1621,33 +1666,37 @@ function renderFrequencyAnalyzerPanel() {
   const buffer = state.previewBuffer || state.currentBuffer;
   if (!buffer) {
     ctx.fillStyle = "rgba(146,160,177,.6)";
-    ctx.font = "12px 'IBM Plex Mono', monospace";
+    ctx.font = "600 13px 'IBM Plex Mono', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("Load a signal to view frequency spectrum", cw / 2, ch / 2);
+    ctx.fillText("REAL-TIME FREQUENCY ANALYZER", cw / 2, ch / 2 - 14);
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(146,160,177,.4)";
+    ctx.fillText("Load a signal or audio file to begin live analysis", cw / 2, ch / 2 + 10);
     return;
   }
 
   const channelVal = $("fa-channel-select") ? $("fa-channel-select").value : "mono";
-  let samples;
-  if (channelVal === "left") samples = channelOf(buffer, 0);
-  else if (channelVal === "right") samples = channelOf(buffer, 1);
-  else samples = monoOf(buffer);
+  let fullSamples;
+  if (channelVal === "left") fullSamples = channelOf(buffer, 0);
+  else if (channelVal === "right") fullSamples = channelOf(buffer, 1);
+  else fullSamples = monoOf(buffer);
 
   const sr = buffer.sampleRate;
   const fftSize = parseInt($("fa-fft-select") ? $("fa-fft-select").value : "2048") || 2048;
-  const isLog = ($("fa-scale-select") ? $("fa-scale-select").value : "log") === "log";
 
-  if (state.selection && state.selection.endS > state.selection.startS) {
-    const s0 = Math.max(0, Math.floor(state.selection.startS * sr));
-    const s1 = Math.min(samples.length, Math.ceil(state.selection.endS * sr));
-    if (s1 > s0) samples = samples.subarray(s0, s1);
-  }
+  let minHz = 20, maxHz = sr / 2;
+  let isLog = true;
+  if (faRangeMode === "bass") { minHz = 20; maxHz = 250; isLog = false; }
+  else if (faRangeMode === "mid") { minHz = 250; maxHz = 4000; isLog = true; }
+  else if (faRangeMode === "high") { minHz = 4000; maxHz = Math.min(20000, sr / 2); isLog = false; }
+  else { minHz = 20; maxHz = Math.min(20000, sr / 2); isLog = true; }
 
-  const padL = 40, padB = 22, padT = 14, padR = 14;
+  const padL = 44, padB = 24, padT = 16, padR = 14;
   const plotW = cw - padL - padR;
   const plotH = ch - padB - padT;
 
-  ctx.strokeStyle = "rgba(255,255,255,.06)";
+  // Grid & dB axes
+  ctx.strokeStyle = "rgba(255,255,255,.05)";
   ctx.lineWidth = 1;
   ctx.font = "9.5px 'IBM Plex Mono', monospace";
   ctx.fillStyle = "rgba(146,160,177,.6)";
@@ -1660,10 +1709,14 @@ function renderFrequencyAnalyzerPanel() {
     ctx.fillText(`${db}dB`, padL - 4, y + 3);
   });
 
-  const minHz = 20, maxHz = sr / 2;
-  const gridFreqs = isLog ? [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000] : [2000, 5000, 10000, 15000, 20000];
+  let gridFreqs = [];
+  if (faRangeMode === "bass") gridFreqs = [20, 50, 100, 150, 200, 250];
+  else if (faRangeMode === "mid") gridFreqs = [250, 500, 1000, 2000, 3000, 4000];
+  else if (faRangeMode === "high") gridFreqs = [4000, 8000, 12000, 16000, 20000];
+  else gridFreqs = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
+
   gridFreqs.forEach((f) => {
-    if (f > maxHz) return;
+    if (f < minHz || f > maxHz) return;
     let xFrac = isLog
       ? (Math.log10(f) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
       : (f - minHz) / (maxHz - minHz);
@@ -1671,72 +1724,103 @@ function renderFrequencyAnalyzerPanel() {
     const x = padL + xFrac * plotW;
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
     ctx.textAlign = "center";
-    const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
-    ctx.fillText(label, x, ch - 6);
+    const label = f >= 1000 ? `${(f / 1000).toFixed(f % 1000 === 0 ? 0 : 1)}k` : `${f}`;
+    ctx.fillText(label, x, ch - 7);
   });
 
-  const size = nextPow2(Math.min(fftSize, samples.length || 2048));
-  const re = new Float64Array(size);
-  const im = new Float64Array(size);
-  const start = Math.max(0, Math.floor((samples.length - size) / 2));
-  for (let i = 0; i < size; i++) {
-    const s = samples[start + i] || 0;
-    const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1));
-    re[i] = s * w;
-  }
-  fft(re, im);
-
-  const half = size / 2;
-  const numSteps = Math.max(128, Math.floor(plotW));
-  const points = [];
+  let points = [];
   let peakMag = 0, peakHz = 0, peakDbVal = -90;
   let sumMag = 0, weightedSumFreq = 0;
 
-  for (let p = 0; p < numSteps; p++) {
-    const frac = p / (numSteps - 1);
-    const hz = isLog
-      ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
-      : minHz + frac * (maxHz - minHz);
-
-    const bin = Math.min(half - 1, Math.max(1, Math.floor((hz / maxHz) * half)));
-    const mag = Math.hypot(re[bin], im[bin]) / half;
-    const db = 20 * Math.log10(mag + 1e-9);
-    const normDb = Math.max(0, Math.min(1, (db + 90) / 90));
-
-    const x = padL + frac * plotW;
-    const y = padT + (1 - normDb) * plotH;
-    points.push({ x, y, hz, db });
-
-    if (mag > peakMag && hz >= 20) {
-      peakMag = mag;
-      peakHz = hz;
-      peakDbVal = db;
+  if (faFrozen && faFrozenData) {
+    points = faFrozenData.points;
+    peakHz = faFrozenData.peakHz;
+    peakDbVal = faFrozenData.peakDbVal;
+    sumMag = 1;
+    weightedSumFreq = faFrozenData.centroidHz;
+  } else {
+    let centerSample = 0;
+    if (state.htmlAudio && !state.htmlAudio.paused && state.htmlAudio.duration) {
+      centerSample = Math.floor(state.htmlAudio.currentTime * sr);
+    } else if (state.selection && state.selection.endS > state.selection.startS) {
+      centerSample = Math.floor(((state.selection.startS + state.selection.endS) / 2) * sr);
+    } else {
+      centerSample = Math.floor(fullSamples.length / 2);
     }
-    sumMag += mag;
-    weightedSumFreq += hz * mag;
+
+    centerSample = Math.max(0, Math.min(fullSamples.length - 1, centerSample));
+    const size = nextPow2(fftSize);
+    const re = new Float64Array(size);
+    const im = new Float64Array(size);
+    const start = centerSample - Math.floor(size / 2);
+
+    for (let i = 0; i < size; i++) {
+      const sIdx = start + i;
+      const s = (sIdx >= 0 && sIdx < fullSamples.length) ? fullSamples[sIdx] : 0;
+      const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1));
+      re[i] = s * w;
+    }
+    fft(re, im);
+
+    const half = size / 2;
+    const numSteps = Math.max(128, Math.floor(plotW));
+
+    for (let p = 0; p < numSteps; p++) {
+      const frac = p / (numSteps - 1);
+      const hz = isLog
+        ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
+        : minHz + frac * (maxHz - minHz);
+
+      const bin = Math.min(half - 1, Math.max(1, Math.floor((hz / (sr / 2)) * half)));
+      const mag = Math.hypot(re[bin], im[bin]) / half;
+      const db = 20 * Math.log10(mag + 1e-9);
+      const normDb = Math.max(0, Math.min(1, (db + 90) / 90));
+
+      const x = padL + frac * plotW;
+      const y = padT + (1 - normDb) * plotH;
+      points.push({ x, y, hz, db });
+
+      if (mag > peakMag && hz >= minHz && hz <= maxHz) {
+        peakMag = mag;
+        peakHz = hz;
+        peakDbVal = db;
+      }
+      sumMag += mag;
+      weightedSumFreq += hz * mag;
+    }
   }
 
   const centroidHz = sumMag > 1e-9 ? weightedSumFreq / sumMag : 0;
 
+  let bandName = "Mid";
+  if (peakHz < 250) bandName = "Bass";
+  else if (peakHz >= 4000) bandName = "High";
+
+  if (!faFrozen) {
+    faFrozenData = { points, peakHz, peakDbVal, centroidHz, bandName };
+  }
+
+  // Draw Area & Glowing Trace
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(padL, padT + plotH);
   points.forEach((pt) => ctx.lineTo(pt.x, pt.y));
   ctx.lineTo(padL + plotW, padT + plotH);
   ctx.closePath();
-  ctx.fillStyle = "rgba(255,180,84,.14)";
+  ctx.fillStyle = "rgba(56, 189, 248, 0.12)";
   ctx.fill();
 
   ctx.beginPath();
   points.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
-  ctx.strokeStyle = "#ffb454";
-  ctx.lineWidth = 1.8;
-  ctx.shadowColor = "rgba(255,180,84,.5)";
-  ctx.shadowBlur = 6;
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 2.0;
+  ctx.shadowColor = "rgba(56, 189, 248, 0.6)";
+  ctx.shadowBlur = 8;
   ctx.stroke();
   ctx.restore();
 
-  if (peakMag > 1e-6) {
+  // Peak Marker
+  if (peakHz >= minHz && peakHz <= maxHz) {
     let pxFrac = isLog
       ? (Math.log10(peakHz) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
       : (peakHz - minHz) / (maxHz - minHz);
@@ -1744,16 +1828,28 @@ function renderFrequencyAnalyzerPanel() {
     const px = padL + pxFrac * plotW;
     const py = padT + (1 - Math.max(0, Math.min(1, (peakDbVal + 90) / 90))) * plotH;
 
-    ctx.fillStyle = "#ffb454";
-    ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
-
-    ctx.strokeStyle = "rgba(255,180,84,.4)";
+    ctx.save();
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 1.8;
     ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
     ctx.setLineDash([]);
+
+    ctx.fillStyle = "#fbbf24";
+    ctx.shadowColor = "#fbbf24";
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill();
+
+    ctx.font = "700 10px 'IBM Plex Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`${peakHz.toFixed(0)} Hz`, Math.max(padL + 35, Math.min(cw - padR - 35, px)), padT + 12);
+    ctx.restore();
   }
 
-  if ($("fa-stat-peak")) $("fa-stat-peak").textContent = `${peakHz.toFixed(1)} Hz (${peakDbVal.toFixed(1)} dB)`;
+  // Update Stats UI
+  if ($("fa-stat-peak")) $("fa-stat-peak").textContent = `${peakHz.toFixed(1)} Hz`;
+  if ($("fa-stat-level")) $("fa-stat-level").textContent = `${peakDbVal.toFixed(1)} dB`;
+  if ($("fa-stat-band")) $("fa-stat-band").textContent = bandName;
   if ($("fa-stat-centroid")) $("fa-stat-centroid").textContent = `${centroidHz.toFixed(0)} Hz`;
   if (faHoverFreq !== null && faHoverDb !== null) {
     if ($("fa-stat-cursor")) $("fa-stat-cursor").textContent = `${faHoverFreq.toFixed(1)} Hz (${faHoverDb.toFixed(1)} dB)`;
@@ -1782,73 +1878,212 @@ function renderSpectrumAnalyzerPanel() {
   const buffer = state.previewBuffer || state.currentBuffer;
   if (!buffer) {
     ctx.fillStyle = "rgba(146,160,177,.6)";
-    ctx.font = "12px 'IBM Plex Mono', monospace";
+    ctx.font = "600 13px 'IBM Plex Mono', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("Load a signal to view spectrum (spectrogram)", cw / 2, ch / 2);
+    ctx.fillText("REAL-TIME SPECTRUM ANALYZER", cw / 2, ch / 2 - 14);
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(146,160,177,.4)";
+    ctx.fillText("Load a signal or audio file to begin live analysis", cw / 2, ch / 2 + 10);
     return;
   }
 
   const mono = monoOf(buffer);
   const sr = buffer.sampleRate;
-  const fftSize = parseInt($("sa-fft-select") ? $("sa-fft-select").value : "1024") || 1024;
-
-  const padL = 40, padB = 22, padT = 14, padR = 14;
+  const fftSize = parseInt($("sa-fft-select") ? $("sa-fft-select").value : "2048") || 2048;
+  const padL = 44, padB = 24, padT = 16, padR = 14;
   const plotW = cw - padL - padR;
   const plotH = ch - padB - padT;
 
-  const targetCols = Math.max(80, Math.floor(plotW));
-  const targetRows = Math.max(60, Math.floor(plotH));
-  const spec = computeSpectrogram(mono, sr, targetCols, targetRows, fftSize);
+  if (saViewMode === "spectrogram") {
+    // 2D STFT Spectrogram View
+    const targetCols = Math.max(80, Math.floor(plotW));
+    const targetRows = Math.max(60, Math.floor(plotH));
+    const spec = computeSpectrogram(mono, sr, targetCols, targetRows, fftSize);
 
-  const off = document.createElement("canvas");
-  off.width = spec.cols;
-  off.height = spec.rows;
-  const octx = off.getContext("2d");
-  const img = octx.createImageData(spec.cols, spec.rows);
+    const off = document.createElement("canvas");
+    off.width = spec.cols; off.height = spec.rows;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(spec.cols, spec.rows);
 
-  for (let c = 0; c < spec.cols; c++) {
-    for (let r = 0; r < spec.rows; r++) {
-      const v = spec.data[c * spec.rows + r] || 0;
-      const [red, green, blue] = colorRamp(v);
-      const pxIdx = ((spec.rows - 1 - r) * spec.cols + c) * 4;
-      img.data[pxIdx] = red;
-      img.data[pxIdx + 1] = green;
-      img.data[pxIdx + 2] = blue;
-      img.data[pxIdx + 3] = 255;
+    for (let c = 0; c < spec.cols; c++) {
+      for (let r = 0; r < spec.rows; r++) {
+        const v = spec.data[c * spec.rows + r] || 0;
+        const [red, green, blue] = colorRamp(v);
+        const pxIdx = ((spec.rows - 1 - r) * spec.cols + c) * 4;
+        img.data[pxIdx] = red; img.data[pxIdx + 1] = green; img.data[pxIdx + 2] = blue; img.data[pxIdx + 3] = 255;
+      }
     }
+    octx.putImageData(img, 0, 0);
+    ctx.drawImage(off, padL, padT, plotW, plotH);
+
+    // Playback cursor
+    if (state.htmlAudio && state.htmlAudio.duration) {
+      const curT = state.htmlAudio.currentTime;
+      const xCur = padL + (curT / buffer.duration) * plotW;
+      if (xCur >= padL && xCur <= padL + plotW) {
+        ctx.save();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "#fff";
+        ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.moveTo(xCur, padT); ctx.lineTo(xCur, padT + plotH); ctx.stroke();
+        ctx.restore();
+      }
+    }
+  } else {
+    // LIVE MOVING FFT SPECTRUM VIEW
+    const numBars = 64;
+    if (!saPeakHolds || saPeakHolds.length !== numBars) {
+      saPeakHolds = new Float32Array(numBars);
+    }
+
+    let centerSample = 0;
+    if (state.htmlAudio && !state.htmlAudio.paused && state.htmlAudio.duration) {
+      centerSample = Math.floor(state.htmlAudio.currentTime * sr);
+    } else if (state.selection && state.selection.endS > state.selection.startS) {
+      centerSample = Math.floor(((state.selection.startS + state.selection.endS) / 2) * sr);
+    } else {
+      centerSample = Math.floor(mono.length / 2);
+    }
+    centerSample = Math.max(0, Math.min(mono.length - 1, centerSample));
+
+    const size = nextPow2(fftSize);
+    const re = new Float64Array(size);
+    const im = new Float64Array(size);
+    const start = centerSample - Math.floor(size / 2);
+
+    for (let i = 0; i < size; i++) {
+      const sIdx = start + i;
+      const s = (sIdx >= 0 && sIdx < mono.length) ? mono[sIdx] : 0;
+      const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1));
+      re[i] = s * w;
+    }
+    fft(re, im);
+
+    const half = size / 2;
+    const minHz = 20, maxHz = Math.min(20000, sr / 2);
+    const isLog = saScaleMode === "log";
+
+    // Grid & Scales
+    ctx.strokeStyle = "rgba(255,255,255,.05)";
+    ctx.lineWidth = 1;
+    ctx.font = "9.5px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(146,160,177,.6)";
+
+    const dbLevels = [0, -18, -36, -54, -72, -90];
+    dbLevels.forEach((db) => {
+      const y = padT + (1 - (db + 90) / 90) * plotH;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cw - padR, y); ctx.stroke();
+      ctx.textAlign = "right";
+      ctx.fillText(`${db}dB`, padL - 4, y + 3);
+    });
+
+    const gridFreqs = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
+    gridFreqs.forEach((f) => {
+      if (f < minHz || f > maxHz) return;
+      let xFrac = isLog
+        ? (Math.log10(f) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
+        : (f - minHz) / (maxHz - minHz);
+      xFrac = Math.max(0, Math.min(1, xFrac));
+      const x = padL + xFrac * plotW;
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+      ctx.textAlign = "center";
+      const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
+      ctx.fillText(label, x, ch - 7);
+    });
+
+    let peakMag = 0, peakHz = 0, peakDbVal = -90;
+    const barSpacing = plotW / numBars;
+    const barWidth = Math.max(barSpacing * 0.75, 2);
+    const linePoints = [];
+
+    for (let b = 0; b < numBars; b++) {
+      const frac = b / (numBars - 1);
+      const hz = isLog
+        ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
+        : minHz + frac * (maxHz - minHz);
+
+      const bin = Math.min(half - 1, Math.max(1, Math.floor((hz / (sr / 2)) * half)));
+      const mag = Math.hypot(re[bin], im[bin]) / half;
+      const db = 20 * Math.log10(mag + 1e-9);
+      const normDb = Math.max(0, Math.min(1, (db + 90) / 90));
+      const hBar = normDb * plotH;
+
+      if (normDb > saPeakHolds[b]) {
+        saPeakHolds[b] = normDb;
+      } else {
+        saPeakHolds[b] *= saPeakDecay;
+      }
+
+      const px = padL + b * barSpacing;
+      const py = (padT + plotH) - hBar;
+      linePoints.push({ x: px + barWidth / 2, y: py });
+
+      if (mag > peakMag && hz >= 20) {
+        peakMag = mag;
+        peakHz = hz;
+        peakDbVal = db;
+      }
+
+      if (saDisplayMode === "bars") {
+        ctx.fillStyle = "rgba(158, 122, 255, 0.85)";
+        ctx.shadowColor = "rgba(158, 122, 255, 0.5)";
+        ctx.shadowBlur = normDb > 0.4 ? 6 : 0;
+        ctx.fillRect(px, py, barWidth, hBar);
+
+        const holdY = (padT + plotH) - saPeakHolds[b] * plotH;
+        ctx.fillStyle = "#ffb454";
+        ctx.fillRect(px, holdY, barWidth, 2);
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    if (saDisplayMode === "line") {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(padL, padT + plotH);
+      linePoints.forEach((pt) => ctx.lineTo(pt.x, pt.y));
+      ctx.lineTo(padL + plotW, padT + plotH);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(158, 122, 255, 0.14)";
+      ctx.fill();
+
+      ctx.beginPath();
+      linePoints.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+      ctx.strokeStyle = "#9e7aff";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = "rgba(158, 122, 255, 0.7)";
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (peakHz >= minHz && peakHz <= maxHz) {
+      let pxFrac = isLog
+        ? (Math.log10(peakHz) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz))
+        : (peakHz - minHz) / (maxHz - minHz);
+      pxFrac = Math.max(0, Math.min(1, pxFrac));
+      const px = padL + pxFrac * plotW;
+
+      ctx.save();
+      ctx.strokeStyle = "#34d399";
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.font = "700 10px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "#34d399";
+      ctx.textAlign = "center";
+      ctx.fillText(`LIVE PEAK: ${peakHz.toFixed(0)} Hz`, Math.max(padL + 45, Math.min(cw - padR - 45, px)), padT + 12);
+      ctx.restore();
+    }
+
+    if ($("sa-stat-peak")) $("sa-stat-peak").textContent = `${peakHz.toFixed(1)} Hz`;
+    if ($("sa-stat-level")) $("sa-stat-level").textContent = `${peakDbVal.toFixed(1)} dB`;
   }
-  octx.putImageData(img, 0, 0);
 
-  ctx.drawImage(off, padL, padT, plotW, plotH);
-
-  ctx.strokeStyle = "rgba(255,255,255,.08)";
-  ctx.lineWidth = 1;
-  ctx.font = "9.5px 'IBM Plex Mono', monospace";
-  ctx.fillStyle = "rgba(146,160,177,.6)";
-
-  const minHz = 20, maxHz = sr / 2;
-  const gridFreqs = [100, 500, 1000, 5000, 10000, 20000];
-  gridFreqs.forEach((f) => {
-    if (f > maxHz) return;
-    const normLog = (Math.log10(f) - Math.log10(minHz)) / (Math.log10(maxHz) - Math.log10(minHz));
-    const y = padT + (1 - normLog) * plotH;
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cw - padR, y); ctx.stroke();
-    ctx.textAlign = "right";
-    const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
-    ctx.fillText(label, padL - 4, y + 3);
-  });
-
-  const dur = buffer.duration;
-  const numTimeTicks = 5;
-  for (let i = 0; i <= numTimeTicks; i++) {
-    const t = (i / numTimeTicks) * dur;
-    const x = padL + (i / numTimeTicks) * plotW;
-    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
-    ctx.textAlign = "center";
-    ctx.fillText(`${t.toFixed(1)}s`, x, ch - 6);
-  }
-
-  if ($("sa-stat-duration")) $("sa-stat-duration").textContent = `${dur.toFixed(2)} s`;
+  if ($("sa-stat-duration")) $("sa-stat-duration").textContent = `${buffer.duration.toFixed(2)} s`;
   if ($("sa-stat-sr")) $("sa-stat-sr").textContent = `${sr} Hz`;
 
   if (saHoverTime !== null && saHoverFreq !== null) {
@@ -2369,10 +2604,21 @@ function updateAbSwitch() {
 state.htmlAudio.addEventListener("play", () => {
   $("icon-play").hidden = true; $("icon-pause").hidden = false;
   if (!state.meterRAF) state.meterRAF = requestAnimationFrame(liveMeterLoop);
+  ensureAnalyzerLoop();
   playheadLoop();
 });
-state.htmlAudio.addEventListener("pause", () => { $("icon-play").hidden = false; $("icon-pause").hidden = true; renderStaticMeters(); });
-state.htmlAudio.addEventListener("ended", () => { $("icon-play").hidden = false; $("icon-pause").hidden = true; renderStaticMeters(); });
+state.htmlAudio.addEventListener("pause", () => {
+  $("icon-play").hidden = false; $("icon-pause").hidden = true;
+  renderStaticMeters();
+  renderFrequencyAnalyzerPanel();
+  renderSpectrumAnalyzerPanel();
+});
+state.htmlAudio.addEventListener("ended", () => {
+  $("icon-play").hidden = false; $("icon-pause").hidden = true;
+  renderStaticMeters();
+  renderFrequencyAnalyzerPanel();
+  renderSpectrumAnalyzerPanel();
+});
 state.htmlAudio.addEventListener("timeupdate", () => {
   $("tp-time").textContent = fmtTime(state.htmlAudio.currentTime);
   if (state.htmlAudio.duration) {
@@ -2386,6 +2632,8 @@ function playheadLoop() {
   renderWaveform();
   renderSpectrogram();
   if (state.activeEffect) renderDetailPanel();
+  renderFrequencyAnalyzerPanel();
+  renderSpectrumAnalyzerPanel();
   playheadRAF = requestAnimationFrame(playheadLoop);
 }
 
@@ -2590,21 +2838,55 @@ function wire() {
   wireWaveformInteraction();
   window.addEventListener("resize", () => redrawAll());
 
+  // Dropdown toggle logic for View and Samples
+  const btnView = $("btn-view");
+  const viewMenu = $("view-menu");
+  if (btnView && viewMenu) {
+    btnView.addEventListener("click", (e) => {
+      e.stopPropagation();
+      viewMenu.classList.toggle("open");
+      if ($("sample-menu")) $("sample-menu").classList.remove("open");
+    });
+  }
+
+  const btnSamples = $("btn-samples");
+  const sampleMenu = $("sample-menu");
+  if (btnSamples && sampleMenu) {
+    btnSamples.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sampleMenu.classList.toggle("open");
+      if (viewMenu) viewMenu.classList.remove("open");
+    });
+  }
+
+  document.addEventListener("click", () => {
+    if (viewMenu) viewMenu.classList.remove("open");
+    if (sampleMenu) sampleMenu.classList.remove("open");
+  });
+
   // View menu & Analyzer panels wiring
   if ($("btn-view-freq")) {
-    $("btn-view-freq").addEventListener("click", () => {
+    $("btn-view-freq").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (viewMenu) viewMenu.classList.remove("open");
       $("freq-analyzer-backdrop").hidden = false;
+      ensureAnalyzerLoop();
       renderFrequencyAnalyzerPanel();
     });
   }
   if ($("btn-view-spectrum")) {
-    $("btn-view-spectrum").addEventListener("click", () => {
+    $("btn-view-spectrum").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (viewMenu) viewMenu.classList.remove("open");
       $("spectrum-analyzer-backdrop").hidden = false;
+      ensureAnalyzerLoop();
       renderSpectrumAnalyzerPanel();
     });
   }
   if ($("btn-view-mixer")) {
-    $("btn-view-mixer").addEventListener("click", () => {
+    $("btn-view-mixer").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (viewMenu) viewMenu.classList.remove("open");
       if ($("btn-open-mixer")) $("btn-open-mixer").click();
     });
   }
@@ -2612,38 +2894,111 @@ function wire() {
   if ($("btn-close-freq-analyzer")) {
     $("btn-close-freq-analyzer").addEventListener("click", () => {
       $("freq-analyzer-backdrop").hidden = true;
+      ensureAnalyzerLoop();
     });
   }
   if ($("btn-close-spectrum-analyzer")) {
     $("btn-close-spectrum-analyzer").addEventListener("click", () => {
       $("spectrum-analyzer-backdrop").hidden = true;
+      ensureAnalyzerLoop();
     });
   }
 
-  if ($("fa-channel-select")) $("fa-channel-select").addEventListener("change", renderFrequencyAnalyzerPanel);
-  if ($("fa-fft-select")) $("fa-fft-select").addEventListener("change", renderFrequencyAnalyzerPanel);
-  if ($("fa-scale-select")) $("fa-scale-select").addEventListener("change", renderFrequencyAnalyzerPanel);
-  if ($("sa-fft-select")) $("sa-fft-select").addEventListener("change", renderSpectrumAnalyzerPanel);
+  const fBackdrop = $("freq-analyzer-backdrop");
+  if (fBackdrop) {
+    fBackdrop.addEventListener("click", (e) => {
+      if (e.target === fBackdrop) {
+        fBackdrop.hidden = true;
+        ensureAnalyzerLoop();
+      }
+    });
+  }
+  const sBackdrop = $("spectrum-analyzer-backdrop");
+  if (sBackdrop) {
+    sBackdrop.addEventListener("click", (e) => {
+      if (e.target === sBackdrop) {
+        sBackdrop.hidden = true;
+        ensureAnalyzerLoop();
+      }
+    });
+  }
+
+  // Frequency Analyzer Controls
+  document.querySelectorAll(".fa-range-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".fa-range-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      faRangeMode = btn.dataset.range || "full";
+      renderFrequencyAnalyzerPanel();
+    });
+  });
+
+  if ($("fa-btn-freeze")) {
+    $("fa-btn-freeze").addEventListener("click", () => {
+      faFrozen = !faFrozen;
+      $("fa-btn-freeze").classList.toggle("frozen", faFrozen);
+      $("fa-btn-freeze").textContent = faFrozen ? "▶ Resume" : "❄ Freeze";
+      renderFrequencyAnalyzerPanel();
+    });
+  }
+
+  if ($("fa-channel-select")) $("fa-channel-select").addEventListener("change", () => renderFrequencyAnalyzerPanel());
+  if ($("fa-fft-select")) $("fa-fft-select").addEventListener("change", () => renderFrequencyAnalyzerPanel());
+
+  // Spectrum Analyzer Controls
+  document.querySelectorAll(".sa-view-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".sa-view-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      saViewMode = btn.dataset.view || "spectrum";
+      renderSpectrumAnalyzerPanel();
+    });
+  });
+
+  if ($("sa-fft-select")) $("sa-fft-select").addEventListener("change", () => renderSpectrumAnalyzerPanel());
+  if ($("sa-display-select")) {
+    $("sa-display-select").addEventListener("change", (e) => {
+      saDisplayMode = e.target.value;
+      renderSpectrumAnalyzerPanel();
+    });
+  }
+  if ($("sa-scale-select")) {
+    $("sa-scale-select").addEventListener("change", (e) => {
+      saScaleMode = e.target.value;
+      renderSpectrumAnalyzerPanel();
+    });
+  }
+  if ($("sa-btn-reset-peaks")) {
+    $("sa-btn-reset-peaks").addEventListener("click", () => {
+      if (saPeakHolds) saPeakHolds.fill(0);
+      renderSpectrumAnalyzerPanel();
+    });
+  }
 
   const faCanvas = $("freq-analyzer-canvas");
   if (faCanvas) {
     faCanvas.addEventListener("mousemove", (e) => {
       const rect = faCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const padL = 40, padR = 14;
+      const padL = 44, padR = 14;
       const plotW = rect.width - padL - padR;
       const buffer = state.previewBuffer || state.currentBuffer;
       if (!buffer || plotW <= 0) return;
       const sr = buffer.sampleRate;
-      const minHz = 20, maxHz = sr / 2;
-      const isLog = ($("fa-scale-select") ? $("fa-scale-select").value : "log") === "log";
+      let minHz = 20, maxHz = sr / 2;
+      let isLog = true;
+      if (faRangeMode === "bass") { minHz = 20; maxHz = 250; isLog = false; }
+      else if (faRangeMode === "mid") { minHz = 250; maxHz = 4000; isLog = true; }
+      else if (faRangeMode === "high") { minHz = 4000; maxHz = Math.min(20000, sr / 2); isLog = false; }
+      else { minHz = 20; maxHz = Math.min(20000, sr / 2); isLog = true; }
+
       let frac = (x - padL) / plotW;
       frac = Math.max(0, Math.min(1, frac));
       faHoverFreq = isLog
         ? Math.pow(10, Math.log10(minHz) + frac * (Math.log10(maxHz) - Math.log10(minHz)))
         : minHz + frac * (maxHz - minHz);
       const y = e.clientY - rect.top;
-      const padT = 14, padB = 22;
+      const padT = 16, padB = 24;
       const plotH = rect.height - padT - padB;
       let yFrac = (y - padT) / plotH;
       yFrac = Math.max(0, Math.min(1, yFrac));
@@ -2663,21 +3018,33 @@ function wire() {
       const rect = saCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const padL = 40, padR = 14, padT = 14, padB = 22;
+      const padL = 44, padR = 14, padT = 16, padB = 24;
       const plotW = rect.width - padL - padR;
       const plotH = rect.height - padT - padB;
       const buffer = state.previewBuffer || state.currentBuffer;
       if (!buffer || plotW <= 0 || plotH <= 0) return;
-      const dur = buffer.duration;
-      let xFrac = (x - padL) / plotW;
-      xFrac = Math.max(0, Math.min(1, xFrac));
-      saHoverTime = xFrac * dur;
 
-      let yFrac = (y - padT) / plotH;
-      yFrac = Math.max(0, Math.min(1, yFrac));
-      const sr = buffer.sampleRate;
-      const minHz = 20, maxHz = sr / 2;
-      saHoverFreq = Math.pow(10, Math.log10(minHz) + (1 - yFrac) * (Math.log10(maxHz) - Math.log10(minHz)));
+      if (saViewMode === "spectrogram") {
+        const dur = buffer.duration;
+        let xFrac = (x - padL) / plotW;
+        xFrac = Math.max(0, Math.min(1, xFrac));
+        saHoverTime = xFrac * dur;
+        let yFrac = (y - padT) / plotH;
+        yFrac = Math.max(0, Math.min(1, yFrac));
+        const sr = buffer.sampleRate;
+        const minHz = 20, maxHz = sr / 2;
+        saHoverFreq = Math.pow(10, Math.log10(minHz) + (1 - yFrac) * (Math.log10(maxHz) - Math.log10(minHz)));
+      } else {
+        const sr = buffer.sampleRate;
+        const minHz = 20, maxHz = Math.min(20000, sr / 2);
+        const isLog = saScaleMode === "log";
+        let xFrac = (x - padL) / plotW;
+        xFrac = Math.max(0, Math.min(1, xFrac));
+        saHoverTime = null;
+        saHoverFreq = isLog
+          ? Math.pow(10, Math.log10(minHz) + xFrac * (Math.log10(maxHz) - Math.log10(minHz)))
+          : minHz + xFrac * (maxHz - minHz);
+      }
       renderSpectrumAnalyzerPanel();
     });
     saCanvas.addEventListener("mouseleave", () => {

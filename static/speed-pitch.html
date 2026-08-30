@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Speed, Pitch & Resampling Visualizer — Signal Lab</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="labs.css">
+<link rel="stylesheet" href="speed-pitch.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<input type="file" id="sp-file-input" accept=".wav,.mp3,audio/wav,audio/mp3,audio/mpeg" hidden>
+
+<div class="app" id="sp-app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app-header">
+    <div class="brand">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <circle cx="13" cy="13" r="11" stroke="var(--trace-a)" stroke-width="1.8"/>
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--trace-a)"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">SIGNAL LAB</span>
+        <span class="brand-tag">speed, pitch & resampling workstation</span>
+      </div>
+    </div>
+
+    <div class="header-nav-tabs">
+      <a href="index.html" class="nav-tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Audio Studio
+      </a>
+      <a href="labs.html" class="nav-tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        Signal Labs
+      </a>
+      <a href="speed-pitch.html" class="nav-tab active">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Speed & Pitch
+      </a>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-ghost" id="sp-btn-upload" title="Upload Audio File">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload File
+      </button>
+      <button class="btn btn-ghost" id="sp-btn-synth" title="Generate Synthetic 440 Hz Tone">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h3l3-9 4 18 3-9h4"/><path d="M19 12h3"/></svg>
+        Synthetic 440Hz Tone
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ MAIN WORKSPACE BODY ============ -->
+  <div class="sp-body">
+
+    <!-- HEADER BANNER & PRESETS -->
+    <div class="lab-header-banner">
+      <div class="lab-info">
+        <h1 class="lab-main-title">Audio Speed, Pitch & Resampling Visualizer</h1>
+        <p class="lab-main-desc">
+          Explore how naive audio resampling ties playback speed and pitch together: 
+          <span class="formula-badge">f_{new} = \text{SpeedFactor} \times f_{orig}</span>. 
+          Changing playback speed compresses or stretches duration while shifting frequency peaks proportionally. Downsampling below Nyquist rate causes real <strong>spectral aliasing</strong>.
+        </p>
+      </div>
+      <div class="lab-quick-presets">
+        <span class="preset-label">PRESETS:</span>
+        <button class="mini-btn preset-btn" id="sp-preset-1x">1.0x Normal</button>
+        <button class="mini-btn preset-btn" id="sp-preset-slow">0.5x Slow Motion</button>
+        <button class="mini-btn preset-btn" id="sp-preset-fast">2.0x Double Speed</button>
+        <button class="mini-btn preset-btn" id="sp-preset-44k">44.1 kHz Safe</button>
+        <button class="mini-btn preset-btn" id="sp-preset-22k">22.05 kHz Reduced</button>
+        <button class="mini-btn preset-btn" id="sp-preset-11k">11.025 kHz Low Rate</button>
+        <button class="mini-btn preset-btn" id="sp-preset-8k">8 kHz Aliasing Demo</button>
+      </div>
+    </div>
+
+    <!-- MAIN GRID CONTAINER -->
+    <div class="sp-grid">
+
+      <!-- LEFT CONTROLS RACK -->
+      <aside class="sp-controls-panel panel">
+        <div class="panel-head">
+          <span class="panel-label">Resampling Controls</span>
+          <span class="panel-sub" id="sp-file-name-label">Default: Synthetic 440 Hz Reference</span>
+        </div>
+
+        <!-- SPEED & PITCH FACTOR MODULE -->
+        <div class="wave-module wave-1-module">
+          <div class="module-head">
+            <span class="module-title"><i class="swatch swatch-a"></i> SPEED & PITCH FACTOR</span>
+            <span class="module-readout" id="sp-readout-speed">1.00x</span>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label"><span>Speed / Pitch Ratio</span><span class="val-tag" id="sp-val-speed">1.00x</span></div>
+            <input type="range" class="lab-range" id="sp-input-speed" min="0.25" max="2.00" step="0.05" value="1.00">
+          </div>
+        </div>
+
+        <!-- SAMPLING RATE REDUCTION MODULE -->
+        <div class="wave-module wave-2-module">
+          <div class="module-head">
+            <span class="module-title"><i class="swatch swatch-cyan"></i> TARGET SAMPLING RATE</span>
+            <span class="module-readout" id="sp-readout-fs" style="color:var(--accent-cyan);">44100 Hz</span>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label"><span>Sampling Frequency (Fs)</span></div>
+            <select class="lab-select" id="sp-select-fs">
+              <option value="orig" selected>Original Sample Rate (e.g. 44.1 kHz)</option>
+              <option value="44100">44100 Hz (CD Quality Safe)</option>
+              <option value="22050">22050 Hz (Half Bandwidth)</option>
+              <option value="11025">11025 Hz (Low Bandwidth)</option>
+              <option value="8000">8000 Hz (Severe Aliasing Demo)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label"><span>Oscilloscope Window</span><span class="val-tag" id="sp-val-window">20 ms</span></div>
+            <input type="range" class="lab-range" id="sp-input-window" min="2" max="100" step="1" value="20">
+          </div>
+        </div>
+
+        <!-- AUDIO PLAYBACK TRANSPORT -->
+        <div class="audio-transport-module">
+          <div class="transport-actions">
+            <button class="btn btn-solid" id="sp-btn-play-orig">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+              Play Original
+            </button>
+            <button class="btn btn-solid" id="sp-btn-play-resampled" style="background:var(--trace-b);color:#180d00;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+              Play Resampled
+            </button>
+          </div>
+          <button class="btn btn-ghost" id="sp-btn-stop" style="margin-top:6px;width:100%;justify-content:center;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>
+            Stop Audio Playback
+          </button>
+        </div>
+
+      </aside>
+
+      <!-- RIGHT DISPLAY DASHBOARD -->
+      <div class="sp-display-area">
+
+        <!-- LIVE METRICS ROW -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-label">ORIGINAL DURATION</span>
+            <span class="metric-value" id="sp-metric-orig-dur">1.000 s</span>
+            <span class="metric-sub" id="sp-metric-orig-fs">Fs = 44100 Hz</span>
+          </div>
+
+          <div class="metric-card primary-card">
+            <span class="metric-label">PROCESSED DURATION</span>
+            <span class="metric-value" id="sp-metric-proc-dur">1.000 s</span>
+            <span class="metric-sub" id="sp-metric-speed">Speed Factor: 1.00x</span>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">STRONGEST SPECTRAL PEAK</span>
+            <span class="metric-value" id="sp-metric-orig-peak">440.0 Hz</span>
+            <span class="metric-sub" id="sp-metric-proc-peak">Resampled: 440.0 Hz</span>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">NYQUIST LIMIT (f_N)</span>
+            <span class="metric-value" id="sp-metric-nyquist">22050.0 Hz</span>
+            <span class="metric-sub" id="sp-metric-alias-freq">Alias: None</span>
+          </div>
+
+          <div class="metric-card" id="sp-card-status">
+            <span class="metric-label">DSP STATUS</span>
+            <span class="metric-value badge-safe" id="sp-metric-status">SAFE</span>
+            <span class="metric-sub" id="sp-metric-status-sub">f < Fs/2 (No aliasing)</span>
+          </div>
+        </div>
+
+        <!-- 7 SYNCHRONIZED CANVASES STACK -->
+        <div class="oscilloscope-stack">
+
+          <!-- 1. ORIGINAL WAVEFORM WITH PLAYBACK CURSOR -->
+          <div class="panel scope-panel">
+            <div class="panel-head">
+              <span class="panel-label"><i class="swatch swatch-a"></i> 1. ORIGINAL TIME-DOMAIN WAVEFORM</span>
+              <span class="panel-sub" id="sp-scope1-sub">Amber = Original Signal Buffer · Cursor Sync</span>
+            </div>
+            <div class="canvas-wrap scope-wrap">
+              <canvas id="canvas-sp-orig-wave"></canvas>
+            </div>
+          </div>
+
+          <!-- 2. RESAMPLED / PROCESSED WAVEFORM -->
+          <div class="panel scope-panel">
+            <div class="panel-head">
+              <span class="panel-label"><i class="swatch swatch-proc"></i> 2. PROCESSED / RESAMPLED WAVEFORM (COMPRESSION/STRETCH)</span>
+              <span class="panel-sub" id="sp-scope2-sub">Violet = Resampled Buffer · Duration = 1.00s</span>
+            </div>
+            <div class="canvas-wrap scope-wrap">
+              <canvas id="canvas-sp-proc-wave"></canvas>
+            </div>
+          </div>
+
+          <!-- 3 & 4. FREQUENCY SPECTRUM PAIR GRID -->
+          <div class="sp-dual-grid">
+
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-a"></i> 3. ORIGINAL SPECTRUM</span>
+                <span class="panel-sub" id="sp-scope3-sub">Original Peak: 440.0 Hz</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-sp-orig-spec"></canvas>
+              </div>
+            </div>
+
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-proc"></i> 4. PROCESSED SPECTRUM</span>
+                <span class="panel-sub" id="sp-scope4-sub">Shifted Peak: 440.0 Hz</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-sp-proc-spec"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 5. DISCRETE SAMPLING VISUALIZER -->
+          <div class="panel scope-panel">
+            <div class="panel-head">
+              <span class="panel-label"><i class="swatch swatch-cyan"></i> 5. DISCRETE SAMPLING VISUALIZER & NYQUIST LIMIT</span>
+              <span class="panel-sub" id="sp-scope5-sub">Cyan Stems at 1/Fs Intervals · Nyquist Line</span>
+            </div>
+            <div class="canvas-wrap scope-wrap">
+              <canvas id="canvas-sp-sampling"></canvas>
+            </div>
+          </div>
+
+          <!-- 6. ALIASING COMPARISON VIEW -->
+          <div class="panel scope-panel hero-scope">
+            <div class="panel-head">
+              <span class="panel-label"><i class="swatch swatch-alias"></i> 6. ALIASING COMPARISON VIEW (BASEBAND RECONSTRUCTION)</span>
+              <span class="panel-sub" id="sp-scope6-sub">Magenta = Apparent Reconstructed Alias Signal</span>
+            </div>
+            <div class="canvas-wrap scope-wrap">
+              <canvas id="canvas-sp-aliasing"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ============ STATUS BAR ============ -->
+  <footer class="status-bar">
+    <span id="sp-status-text">Audio Speed, Pitch & Resampling Visualizer ready. Isolated DSP Workstation.</span>
+    <span class="status-right">Signal Lab Page 3</span>
+  </footer>
+
+</div>
+
+<script src="speed-pitch.js"></script>
+</body>
+</html>
