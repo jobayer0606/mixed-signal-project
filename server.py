@@ -30,6 +30,12 @@ from pydantic import BaseModel
 
 from pyaudiolab.io_utils import load_wav, save_wav, info
 from pyaudiolab.effects import EFFECT_REGISTRY
+from pyaudiolab.labs import (
+    calculate_beat_metrics,
+    calculate_sampling_dsp,
+    calculate_fourier_metrics,
+    calculate_convolution_metrics,
+)
 
 logger = logging.getLogger("pyaudiolab.server")
 
@@ -306,6 +312,92 @@ async def apply_effect_endpoint(name: str, req: EffectRequest):
         "frames": audio_out.shape[0],
         "duration_s": duration_s,
     }
+
+
+# =========================================================================
+# Signal Labs API Endpoints (Pure Python DSP Calculations)
+# =========================================================================
+
+class BeatLabRequest(BaseModel):
+    f1: float = 440.0
+    f2: float = 444.0
+    a1: float = 0.8
+    a2: float = 0.8
+    shape1: str = "sine"
+    shape2: str = "sine"
+    time_window_ms: float = 25.0
+
+
+class SamplingLabRequest(BaseModel):
+    f: float = 700.0
+    fs: float = 1000.0
+    amp: float = 0.8
+    shape: str = "sine"
+    time_window_ms: float = 15.0
+
+
+class FourierLabRequest(BaseModel):
+    shape: str = "square"
+    n_terms: int = 5
+    amp: float = 0.8
+    f0: float = 100.0
+    time_window_ms: float = 20.0
+
+
+class ConvolutionLabRequest(BaseModel):
+    x: List[float] = [1.0, 2.0, 1.0]
+    h: List[float] = [1.0, 1.0]
+    n_index: int = 2
+    mode: str = "discrete"
+
+
+@app.post("/api/labs/beat")
+async def api_labs_beat(req: BeatLabRequest):
+    """Calculate wave interference & beat frequency metrics."""
+    return calculate_beat_metrics(
+        f1=req.f1,
+        f2=req.f2,
+        a1=req.a1,
+        a2=req.a2,
+        shape1=req.shape1,
+        shape2=req.shape2,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/sampling")
+async def api_labs_sampling(req: SamplingLabRequest):
+    """Calculate sampling, aliasing & Nyquist metrics."""
+    return calculate_sampling_dsp(
+        f=req.f,
+        fs=req.fs,
+        amp=req.amp,
+        shape=req.shape,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/fourier")
+async def api_labs_fourier(req: FourierLabRequest):
+    """Calculate Fourier series harmonic expansion & error metrics."""
+    return calculate_fourier_metrics(
+        shape=req.shape,
+        n_terms=req.n_terms,
+        amp=req.amp,
+        f0=req.f0,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/convolution")
+async def api_labs_convolution(req: ConvolutionLabRequest):
+    """Calculate discrete linear convolution and step mathematical derivation."""
+    return calculate_convolution_metrics(
+        x_seq=req.x,
+        h_seq=req.h,
+        n_index=req.n_index,
+        mode=req.mode,
+    )
 
 
 # Mount sample_wavs so the frontend's "Samples" menu can fetch bundled demo

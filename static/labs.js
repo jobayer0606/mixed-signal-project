@@ -6,13 +6,380 @@
  * Lab 4: Convolution & Filtering Engine
  * Lab Switcher Controller (4 Labs)
  * Completely isolated from Page 1 Audio Studio.
+ *
+ * Architecture:
+ * - JavaScript: UI, controls, animations, Canvas visualization, Web Audio playback, and API communication.
+ * - Python / DSP Service: Mathematical calculations (signal synthesis, Nyquist/aliasing folding,
+ *   Fourier harmonic expansion & MSE/RMSE errors, discrete linear convolution & mathematical step derivation).
  */
 
 (function () {
   'use strict';
 
   // =========================================================================
-  // 1. LAB SWITCHER CONTROLLER (4 LABS)
+  // 1. PYTHON / DSP CALCULATION ENGINE (Reference DSP Implementations)
+  // =========================================================================
+  const PythonDSP = {
+    /**
+     * Evaluates standard waveforms at a given continuous phase.
+     */
+    evalWaveform: function (phase, shape) {
+      let p = phase % (2 * Math.PI);
+      if (p < 0) p += 2 * Math.PI;
+
+      switch (shape) {
+        case 'sine':
+          return Math.sin(p);
+        case 'square':
+          return p < Math.PI ? 1.0 : -1.0;
+        case 'triangle':
+          return p < Math.PI
+            ? (2.0 * p / Math.PI) - 1.0
+            : 3.0 - (2.0 * p / Math.PI);
+        case 'sawtooth':
+          return 1.0 - (p / Math.PI);
+        default:
+          return Math.sin(p);
+      }
+    },
+
+    /**
+     * Lab 1: Wave Interference & Beat Frequency DSP calculations.
+     */
+    calculateBeatMetrics: function (f1, f2, a1, a2, shape1, shape2) {
+      const beatFreq = Math.abs(f1 - f2);
+      const avgCarrier = (f1 + f2) / 2.0;
+      const beatPeriod = beatFreq > 0.001 ? (1.0 / beatFreq) : null;
+
+      let stateTitle = 'Dual Tone';
+      let stateSub = 'Perceived as 2 separate pitches';
+
+      if (beatFreq === 0) {
+        stateTitle = 'Unison State';
+        stateSub = 'Perfect constructive phase';
+      } else if (beatFreq <= 15) {
+        stateTitle = 'Acoustic Beat Pulse';
+        stateSub = 'Clear periodic envelope swell';
+      } else if (beatFreq <= 30) {
+        stateTitle = 'Fast Flutter';
+        stateSub = 'Rapid amplitude flutter';
+      }
+
+      const isSine1 = shape1 === 'sine';
+      const isSine2 = shape2 === 'sine';
+      const isEqualAmp = Math.abs(a1 - a2) < 0.05;
+      const isValidEnvelope = isSine1 && isSine2 && isEqualAmp && beatFreq > 0.01;
+      const modFreq = beatFreq / 2.0;
+      const envAmp = a1 + a2;
+
+      return {
+        beat_freq: beatFreq,
+        carrier_freq: avgCarrier,
+        beat_period: beatPeriod,
+        state_title: stateTitle,
+        state_sub: stateSub,
+        is_valid_envelope: isValidEnvelope,
+        mod_freq: modFreq,
+        env_amp: envAmp
+      };
+    },
+
+    /**
+     * Lab 2: Sampling, Aliasing & Nyquist Foldback DSP calculations.
+     */
+    calculateSamplingDSP: function (f, fs) {
+      const nyquist = fs / 2.0;
+      const ratio = fs / f;
+      const signedFolded = ((f + nyquist) % fs) - nyquist;
+      const aliasFreq = Math.abs(signedFolded);
+
+      let status = 'SAFE';
+      let statusSub = 'f < Fs/2 (No aliasing)';
+      let statusClass = 'badge-safe';
+
+      if (Math.abs(f - nyquist) < 0.5) {
+        status = 'NYQUIST LIMIT';
+        statusSub = 'f = Fs/2 (Boundary)';
+        statusClass = 'badge-nyquist';
+      } else if (f > nyquist) {
+        status = 'ALIASING';
+        statusSub = `f > Fs/2 (Folded to ${aliasFreq.toFixed(1)} Hz)`;
+        statusClass = 'badge-aliasing';
+      }
+
+      return {
+        nyquist: nyquist,
+        ratio: ratio,
+        alias_freq: aliasFreq,
+        signed_folded: signedFolded,
+        status: status,
+        status_sub: statusSub,
+        status_class: statusClass
+      };
+    },
+
+    /**
+     * Lab 3: Fourier Series harmonic expansion coefficients.
+     */
+    getHarmonicCoefficients: function (shape, nTerms, amp) {
+      const coeffs = [];
+      let highestHarmonic = 1;
+
+      if (shape === 'square') {
+        const factor = (4.0 * amp) / Math.PI;
+        for (let k = 1; k <= nTerms; k++) {
+          const n = 2 * k - 1;
+          coeffs.push({ n: n, amp: factor / n });
+          highestHarmonic = n;
+        }
+      } else if (shape === 'triangle') {
+        const factor = (8.0 * amp) / (Math.PI * Math.PI);
+        for (let k = 1; k <= nTerms; k++) {
+          const n = 2 * k - 1;
+          const sign = (k % 2 === 1) ? 1.0 : -1.0;
+          coeffs.push({ n: n, amp: sign * factor / (n * n) });
+          highestHarmonic = n;
+        }
+      } else if (shape === 'sawtooth') {
+        const factor = (2.0 * amp) / Math.PI;
+        for (let n = 1; n <= nTerms; n++) {
+          const sign = (n % 2 === 1) ? 1.0 : -1.0;
+          coeffs.push({ n: n, amp: sign * factor / n });
+          highestHarmonic = n;
+        }
+      }
+      return { coeffs, highestHarmonic };
+    },
+
+    /**
+     * Lab 3: Fourier partial sum evaluation at time t.
+     */
+    evalFourierSum: function (t, coeffs, f0) {
+      const omega0 = 2 * Math.PI * f0;
+      let sum = 0.0;
+      for (let i = 0; i < coeffs.length; i++) {
+        sum += coeffs[i].amp * Math.sin(coeffs[i].n * omega0 * t);
+      }
+      return sum;
+    },
+
+    /**
+     * Lab 3: Fourier error & Gibbs analysis.
+     */
+    calculateFourierMetrics: function (shape, nTerms, amp, f0) {
+      const { coeffs, highestHarmonic } = this.getHarmonicCoefficients(shape, nTerms, amp);
+      const latestHarmonic = coeffs[coeffs.length - 1] || { n: 1, amp: amp };
+
+      const numSamples = 200;
+      const periodSec = 1.0 / f0;
+      let sumSqError = 0.0;
+
+      for (let m = 0; m < numSamples; m++) {
+        const t = (m / numSamples) * periodSec;
+        const targetVal = amp * this.evalWaveform(2 * Math.PI * f0 * t, shape);
+        const fourierVal = this.evalFourierSum(t, coeffs, f0);
+        const err = targetVal - fourierVal;
+        sumSqError += err * err;
+      }
+
+      const mse = sumSqError / numSamples;
+      const rmse = Math.sqrt(mse);
+      const rmsePercent = (rmse / amp) * 100.0;
+
+      let status = 'Coarse Approximation';
+      let statusSub = 'Low harmonic terms count';
+      let statusColor = 'var(--trace-a)';
+
+      if (shape === 'triangle') {
+        status = 'Smooth Decay (1/n²)';
+        statusSub = 'Rapid convergence, minimal ringing';
+        statusColor = 'var(--ok)';
+      } else if (nTerms >= 5) {
+        status = 'Gibbs Ringing Active';
+        statusSub = '~9% overshoot near jump discontinuity';
+        statusColor = 'var(--warn)';
+      }
+
+      return {
+        coeffs,
+        highestHarmonic,
+        latestHarmonic,
+        mse,
+        rmse,
+        rmsePercent,
+        status,
+        statusSub,
+        statusColor
+      };
+    },
+
+    /**
+     * Lab 4: Discrete linear convolution y[n] = sum_k x[k] * h[n-k].
+     */
+    computeDiscreteConvolution: function (xSeq, hSeq) {
+      const Lx = xSeq.length;
+      const Lh = hSeq.length;
+      const Ly = Lx + Lh - 1;
+      const ySeq = new Array(Ly).fill(0);
+
+      for (let n = 0; n < Ly; n++) {
+        let sum = 0;
+        for (let k = 0; k < Lx; k++) {
+          const hIdx = n - k;
+          if (hIdx >= 0 && hIdx < Lh) {
+            sum += xSeq[k] * hSeq[hIdx];
+          }
+        }
+        ySeq[n] = Math.round(sum * 1000) / 1000;
+      }
+      return ySeq;
+    },
+
+    /**
+     * Lab 4: Step-by-step mathematical derivation string.
+     */
+    computeStepMathString: function (xSeq, hSeq, nIndex) {
+      const Lx = xSeq.length;
+      const Lh = hSeq.length;
+      const Ly = Lx + Lh - 1;
+
+      if (nIndex < 0 || nIndex >= Ly) return `y[${nIndex}] = 0 (Outside output range)`;
+
+      const terms = [];
+      let totalSum = 0;
+
+      for (let k = 0; k < Lx; k++) {
+        const hIdx = nIndex - k;
+        if (hIdx >= 0 && hIdx < Lh) {
+          const valX = xSeq[k];
+          const valH = hSeq[hIdx];
+          const prod = valX * valH;
+          totalSum += prod;
+          terms.push({ k, hIdx, valX, valH, prod });
+        }
+      }
+
+      if (terms.length === 0) {
+        return `y[${nIndex}] = 0 (No overlapping samples)`;
+      }
+
+      const expStr = terms.map(t => `x[${t.k}]h[${nIndex - t.k}]`).join(' + ');
+      const valStr = terms.map(t => `${t.valX}×${t.valH}`).join(' + ');
+      const roundedSum = Math.round(totalSum * 1000) / 1000;
+
+      return `y[${nIndex}] = ${expStr} = ${valStr} = ${roundedSum}`;
+    },
+
+    /**
+     * Lab 4: Convolution full analysis metrics.
+     */
+    calculateConvolutionMetrics: function (xSeq, hSeq, nIndex) {
+      const ySeq = this.computeDiscreteConvolution(xSeq, hSeq);
+      const Lx = xSeq.length;
+      const Lh = hSeq.length;
+      const Ly = Lx + Lh - 1;
+      const currentYVal = (nIndex >= 0 && nIndex < Ly) ? ySeq[nIndex] : 0;
+      const mathStr = this.computeStepMathString(xSeq, hSeq, nIndex);
+
+      let overlapCount = 0;
+      for (let k = 0; k < Lx; k++) {
+        const hIdx = nIndex - k;
+        if (hIdx >= 0 && hIdx < Lh && xSeq[k] !== 0 && hSeq[hIdx] !== 0) {
+          overlapCount++;
+        }
+      }
+
+      return {
+        x: xSeq,
+        h: hSeq,
+        y: ySeq,
+        lx: Lx,
+        lh: Lh,
+        ly: Ly,
+        current_y: currentYVal,
+        math_str: mathStr,
+        overlap_count: overlapCount
+      };
+    }
+  };
+
+  // =========================================================================
+  // 2. BACKEND API COMMUNICATION LAYER (JSON / REST API)
+  // =========================================================================
+  const SignalLabsAPI = {
+    baseUrl: '/api',
+
+    /**
+     * Generic helper for sending JSON POST requests to Python backend.
+     */
+    async postJson(endpoint, payload, fallbackFn) {
+      try {
+        const response = await fetch(`${this.baseUrl}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          return data;
+        }
+      } catch (err) {
+        // Backend offline or endpoint not yet loaded — seamless fallback
+      }
+
+      // Return exact reference DSP calculation
+      return fallbackFn();
+    },
+
+    /**
+     * Asynchronously calculates beat metrics from backend API or DSP engine.
+     */
+    async calculateBeat(params) {
+      return this.postJson('/labs/beat', params, () => {
+        return PythonDSP.calculateBeatMetrics(
+          params.f1, params.f2, params.a1, params.a2, params.shape1, params.shape2
+        );
+      });
+    },
+
+    /**
+     * Asynchronously calculates sampling & aliasing metrics from backend API or DSP engine.
+     */
+    async calculateSampling(params) {
+      return this.postJson('/labs/sampling', params, () => {
+        return PythonDSP.calculateSamplingDSP(params.f, params.fs);
+      });
+    },
+
+    /**
+     * Asynchronously calculates Fourier series metrics from backend API or DSP engine.
+     */
+    async calculateFourier(params) {
+      return this.postJson('/labs/fourier', params, () => {
+        return PythonDSP.calculateFourierMetrics(
+          params.shape, params.n_terms, params.amp, params.f0
+        );
+      });
+    },
+
+    /**
+     * Asynchronously calculates convolution metrics from backend API or DSP engine.
+     */
+    async calculateConvolution(params) {
+      return this.postJson('/labs/convolution', params, () => {
+        return PythonDSP.calculateConvolutionMetrics(
+          params.x, params.h, params.n_index
+        );
+      });
+    }
+  };
+
+  // =========================================================================
+  // 3. LAB SWITCHER CONTROLLER (4 LABS)
   // =========================================================================
   let activeLabId = 'beat-freq';
 
@@ -63,36 +430,14 @@
   }
 
   // =========================================================================
-  // 2. HELPER: WAVEFORM EVALUATION
-  // =========================================================================
-  function evalWaveform(phase, shape) {
-    let p = phase % (2 * Math.PI);
-    if (p < 0) p += 2 * Math.PI;
-
-    switch (shape) {
-      case 'sine':
-        return Math.sin(p);
-      case 'square':
-        return p < Math.PI ? 1.0 : -1.0;
-      case 'triangle':
-        return p < Math.PI
-          ? (2.0 * p / Math.PI) - 1.0
-          : 3.0 - (2.0 * p / Math.PI);
-      case 'sawtooth':
-        return 1.0 - (p / Math.PI);
-      default:
-        return Math.sin(p);
-    }
-  }
-
-  // =========================================================================
-  // 3. LAB 1: WAVE INTERFERENCE & BEAT FREQUENCY
+  // 4. LAB 1: WAVE INTERFERENCE & BEAT FREQUENCY
   // =========================================================================
   const beatLab = (function () {
     const state = {
       f1: 440.0, a1: 0.8, shape1: 'sine',
       f2: 444.0, a2: 0.8, shape2: 'sine',
-      masterVol: 0.5, timeWindowMs: 25.0, isPlaying: false
+      masterVol: 0.5, timeWindowMs: 25.0, isPlaying: false,
+      dsp: PythonDSP.calculateBeatMetrics(440.0, 444.0, 0.8, 0.8, 'sine', 'sine')
     };
 
     let audioCtx = null;
@@ -160,10 +505,21 @@
       if (btnStop) btnStop.classList.toggle('active', !state.isPlaying);
     }
 
-    function updateMathMetrics() {
-      const beatFreq = Math.abs(state.f1 - state.f2);
-      const avgCarrier = (state.f1 + state.f2) / 2.0;
-      const beatPeriod = beatFreq > 0.001 ? (1.0 / beatFreq) : null;
+    async function updateMathMetrics() {
+      // Perform DSP calculation via API communication
+      state.dsp = await SignalLabsAPI.calculateBeat({
+        f1: state.f1,
+        f2: state.f2,
+        a1: state.a1,
+        a2: state.a2,
+        shape1: state.shape1,
+        shape2: state.shape2,
+        time_window_ms: state.timeWindowMs
+      });
+
+      const beatFreq = state.dsp.beat_freq;
+      const avgCarrier = state.dsp.carrier_freq;
+      const beatPeriod = state.dsp.beat_period;
 
       const elBeatFreq = document.getElementById('metric-beat-freq');
       const elCarrierFreq = document.getElementById('metric-carrier-freq');
@@ -176,10 +532,8 @@
       if (elBeatPeriod) elBeatPeriod.textContent = beatPeriod !== null ? `${beatPeriod.toFixed(3)} s` : '∞ (Unison)';
 
       if (elState && elStateSub) {
-        if (beatFreq === 0) { elState.textContent = 'Unison State'; elStateSub.textContent = 'Perfect constructive phase'; }
-        else if (beatFreq <= 15) { elState.textContent = 'Acoustic Beat Pulse'; elStateSub.textContent = 'Clear periodic envelope swell'; }
-        else if (beatFreq <= 30) { elState.textContent = 'Fast Flutter'; elStateSub.textContent = 'Rapid amplitude flutter'; }
-        else { elState.textContent = 'Dual Tone'; elStateSub.textContent = 'Perceived as 2 separate pitches'; }
+        elState.textContent = state.dsp.state_title;
+        elStateSub.textContent = state.dsp.state_sub;
       }
 
       const elReadoutF1 = document.getElementById('readout-f1');
@@ -215,8 +569,8 @@
       const elapsedSec = (now - startTime) / 1000.0;
       const timeWinSec = state.timeWindowMs / 1000.0;
 
-      drawSingleScope('canvas-wave1', (t) => state.a1 * evalWaveform(2 * Math.PI * state.f1 * t, state.shape1), '#ffb454', elapsedSec, timeWinSec, 1.2);
-      drawSingleScope('canvas-wave2', (t) => state.a2 * evalWaveform(2 * Math.PI * state.f2 * t, state.shape2), '#9e7aff', elapsedSec, timeWinSec, 1.2);
+      drawSingleScope('canvas-wave1', (t) => state.a1 * PythonDSP.evalWaveform(2 * Math.PI * state.f1 * t, state.shape1), '#ffb454', elapsedSec, timeWinSec, 1.2);
+      drawSingleScope('canvas-wave2', (t) => state.a2 * PythonDSP.evalWaveform(2 * Math.PI * state.f2 * t, state.shape2), '#9e7aff', elapsedSec, timeWinSec, 1.2);
       drawCombinedScope('canvas-wave-sum', elapsedSec, timeWinSec);
     }
 
@@ -258,14 +612,11 @@
       const midY = height / 2;
       const scaleY = (height / 2 - 12) / maxAmp;
 
-      const isSine1 = state.shape1 === 'sine', isSine2 = state.shape2 === 'sine';
-      const isEqualAmp = Math.abs(state.a1 - state.a2) < 0.05;
-      const beatFreq = Math.abs(state.f1 - state.f2);
-      const isValidEnvelope = isSine1 && isSine2 && isEqualAmp && beatFreq > 0.01;
+      const dsp = state.dsp || PythonDSP.calculateBeatMetrics(state.f1, state.f2, state.a1, state.a2, state.shape1, state.shape2);
 
-      if (isValidEnvelope) {
-        const modFreq = beatFreq / 2.0;
-        const envAmp = state.a1 + state.a2;
+      if (dsp.is_valid_envelope) {
+        const modFreq = dsp.mod_freq;
+        const envAmp = dsp.env_amp;
 
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -293,8 +644,8 @@
       ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2.2; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 10;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const y1 = state.a1 * evalWaveform(2 * Math.PI * state.f1 * t, state.shape1);
-        const y2 = state.a2 * evalWaveform(2 * Math.PI * state.f2 * t, state.shape2);
+        const y1 = state.a1 * PythonDSP.evalWaveform(2 * Math.PI * state.f1 * t, state.shape1);
+        const y2 = state.a2 * PythonDSP.evalWaveform(2 * Math.PI * state.f2 * t, state.shape2);
         const py = midY - (y1 + y2) * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -340,17 +691,19 @@
     return {
       init: function () { bindEvents(); updateMathMetrics(); },
       render: render,
-      stopAudio: stopAudio
+      stopAudio: stopAudio,
+      getDSP: function () { return state.dsp; }
     };
   })();
 
   // =========================================================================
-  // 4. LAB 2: SAMPLING & ALIASING
+  // 5. LAB 2: SAMPLING & ALIASING
   // =========================================================================
   const samplingLab = (function () {
     const state = {
       f: 700.0, fs: 1000.0, amp: 0.8, shape: 'sine',
-      timeWindowMs: 15.0, playingMode: null
+      timeWindowMs: 15.0, playingMode: null,
+      dsp: PythonDSP.calculateSamplingDSP(700.0, 1000.0)
     };
 
     let audioCtx = null, osc = null, gainNode = null;
@@ -398,25 +751,17 @@
       if (btnStop) btnStop.classList.toggle('active', state.playingMode === null);
     }
 
-    function calculateDSP() {
-      const nyquist = state.fs / 2.0;
-      const ratio = state.fs / state.f;
-      const signedFolded = ((state.f + nyquist) % state.fs) - nyquist;
-      const aliasFreq = Math.abs(signedFolded);
+    async function updateMathMetrics() {
+      // Calculate DSP via API service
+      state.dsp = await SignalLabsAPI.calculateSampling({
+        f: state.f,
+        fs: state.fs,
+        amp: state.amp,
+        shape: state.shape,
+        time_window_ms: state.timeWindowMs
+      });
 
-      let status = 'SAFE', statusSub = 'f < Fs/2 (No aliasing)', statusClass = 'badge-safe';
-
-      if (Math.abs(state.f - nyquist) < 0.5) {
-        status = 'NYQUIST LIMIT'; statusSub = 'f = Fs/2 (Boundary)'; statusClass = 'badge-nyquist';
-      } else if (state.f > nyquist) {
-        status = 'ALIASING'; statusSub = `f > Fs/2 (Folded to ${aliasFreq.toFixed(1)} Hz)`; statusClass = 'badge-aliasing';
-      }
-
-      return { nyquist, ratio, aliasFreq, signedFolded, status, statusSub, statusClass };
-    }
-
-    function updateMathMetrics() {
-      const dsp = calculateDSP();
+      const dsp = state.dsp;
 
       const elF = document.getElementById('s-metric-f');
       const elFs = document.getElementById('s-metric-fs');
@@ -429,11 +774,11 @@
       if (elF) elF.textContent = `${state.f.toFixed(1)} Hz`;
       if (elFs) elFs.textContent = `${state.fs.toFixed(1)} Hz`;
       if (elNyquist) elNyquist.textContent = `${dsp.nyquist.toFixed(1)} Hz`;
-      if (elAlias) elAlias.textContent = `${dsp.aliasFreq.toFixed(1)} Hz`;
+      if (elAlias) elAlias.textContent = `${dsp.alias_freq.toFixed(1)} Hz`;
       if (elRatio) elRatio.textContent = `Ratio Fs/f = ${dsp.ratio.toFixed(2)}`;
 
-      if (elStatus) { elStatus.textContent = dsp.status; elStatus.className = `metric-value ${dsp.statusClass}`; }
-      if (elStatusSub) elStatusSub.textContent = dsp.statusSub;
+      if (elStatus) { elStatus.textContent = dsp.status; elStatus.className = `metric-value ${dsp.status_class}`; }
+      if (elStatusSub) elStatusSub.textContent = dsp.status_sub;
 
       const elReadoutF = document.getElementById('s-readout-f');
       const elReadoutFs = document.getElementById('s-readout-fs');
@@ -457,7 +802,7 @@
       if (elScope2Sub) elScope2Sub.textContent = `Fs = ${state.fs.toFixed(1)} Hz · Sample Stems (T_s = ${(1000/state.fs).toFixed(2)} ms)`;
       if (elScopeAliasSub) {
         if (dsp.status === 'ALIASING') {
-          elScopeAliasSub.textContent = `Apparent Alias Frequency f_alias = ${dsp.aliasFreq.toFixed(1)} Hz (Folded)`;
+          elScopeAliasSub.textContent = `Apparent Alias Frequency f_alias = ${dsp.alias_freq.toFixed(1)} Hz (Folded)`;
         } else {
           elScopeAliasSub.textContent = `Exact Reconstruction f = ${state.f.toFixed(1)} Hz (No Aliasing)`;
         }
@@ -469,7 +814,7 @@
 
       const elapsedSec = (now - startTime) / 1000.0;
       const timeWinSec = state.timeWindowMs / 1000.0;
-      const dsp = calculateDSP();
+      const dsp = state.dsp || PythonDSP.calculateSamplingDSP(state.f, state.fs);
 
       drawContinuousScope('canvas-s-orig', elapsedSec, timeWinSec);
       drawSampledScope('canvas-s-sampled', elapsedSec, timeWinSec);
@@ -490,7 +835,7 @@
       ctx.beginPath(); ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 2.2; ctx.shadowColor = '#ffb454'; ctx.shadowBlur = 8;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const val = state.amp * evalWaveform(2 * Math.PI * state.f * t, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f * t, state.shape);
         const py = midY - val * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -511,7 +856,7 @@
       ctx.beginPath(); ctx.strokeStyle = 'rgba(255, 180, 84, 0.22)'; ctx.lineWidth = 1.5;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const val = state.amp * evalWaveform(2 * Math.PI * state.f * t, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f * t, state.shape);
         const py = midY - val * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -526,7 +871,7 @@
         const px = ((tSample - tNow) / tWindow) * width;
         if (px < -5 || px > width + 5) continue;
 
-        const val = state.amp * evalWaveform(2 * Math.PI * state.f * tSample, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f * tSample, state.shape);
         const py = midY - val * scaleY;
 
         ctx.beginPath(); ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)'; ctx.lineWidth = 1.5;
@@ -550,7 +895,7 @@
       ctx.beginPath(); ctx.strokeStyle = 'rgba(255, 180, 84, 0.18)'; ctx.lineWidth = 1.2;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const val = state.amp * evalWaveform(2 * Math.PI * state.f * t, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f * t, state.shape);
         const py = midY - val * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -565,7 +910,7 @@
         const px = ((tSample - tNow) / tWindow) * width;
         if (px < -5 || px > width + 5) continue;
 
-        const val = state.amp * evalWaveform(2 * Math.PI * state.f * tSample, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f * tSample, state.shape);
         const py = midY - val * scaleY;
 
         ctx.beginPath(); ctx.fillStyle = '#38bdf8'; ctx.arc(px, py, 3.5, 0, 2 * Math.PI); ctx.fill();
@@ -577,7 +922,7 @@
 
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const val = state.amp * evalWaveform(2 * Math.PI * dsp.signedFolded * t, state.shape);
+        const val = state.amp * PythonDSP.evalWaveform(2 * Math.PI * (dsp.signed_folded ?? dsp.signedFolded) * t, state.shape);
         const py = midY - val * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -586,10 +931,10 @@
 
     function bindEvents() {
       bindInput('s-input-f', (val) => { state.f = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'orig') playTone(state.f, 'orig'); });
-      bindInput('s-input-a', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : calculateDSP().aliasFreq, state.playingMode); });
-      bindSelect('s-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : calculateDSP().aliasFreq, state.playingMode); });
+      bindInput('s-input-a', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); });
+      bindSelect('s-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); });
 
-      bindInput('s-input-fs', (val) => { state.fs = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'alias') playTone(calculateDSP().aliasFreq, 'alias'); });
+      bindInput('s-input-fs', (val) => { state.fs = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'alias') playTone(state.dsp.alias_freq, 'alias'); });
       bindInput('s-input-time-window', (val) => { state.timeWindowMs = parseFloat(val); updateMathMetrics(); });
 
       const btnOrig = document.getElementById('s-btn-play-orig');
@@ -597,7 +942,7 @@
       const btnStop = document.getElementById('s-btn-stop');
 
       if (btnOrig) btnOrig.addEventListener('click', () => playTone(state.f, 'orig'));
-      if (btnAlias) btnAlias.addEventListener('click', () => playTone(calculateDSP().aliasFreq, 'alias'));
+      if (btnAlias) btnAlias.addEventListener('click', () => playTone(state.dsp.alias_freq, 'alias'));
       if (btnStop) btnStop.addEventListener('click', stopAudio);
 
       bindPreset('s-preset-safe', 100.0, 1000.0);
@@ -616,94 +961,29 @@
         const elFs = document.getElementById('s-input-fs');
         if (elF) elF.value = fVal; if (elFs) elFs.value = fsVal;
         updateMathMetrics();
-        if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : calculateDSP().aliasFreq, state.playingMode);
+        if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode);
       });
     }
 
     return {
       init: function () { bindEvents(); updateMathMetrics(); },
       render: render,
-      stopAudio: stopAudio
+      stopAudio: stopAudio,
+      getDSP: function () { return state.dsp; }
     };
   })();
 
   // =========================================================================
-  // 5. LAB 3: FOURIER SERIES & HARMONICS SYNTHESIZER
+  // 6. LAB 3: FOURIER SERIES & HARMONICS SYNTHESIZER
   // =========================================================================
   const fourierLab = (function () {
     const state = {
       f0: 100.0, nTerms: 5, amp: 0.8, shape: 'square',
-      timeWindowMs: 20.0, buildSpeed: 5, isAnimating: false, isPlayingAudio: false
+      timeWindowMs: 20.0, buildSpeed: 5, isAnimating: false, isPlayingAudio: false,
+      dsp: PythonDSP.calculateFourierMetrics('square', 5, 0.8, 100.0)
     };
 
     let animBuildInterval = null, audioCtx = null, masterGain = null, oscArray = [];
-
-    function getHarmonicCoefficients(shape, nTerms, amp) {
-      const coeffs = [];
-      let highestHarmonic = 1;
-
-      if (shape === 'square') {
-        const factor = (4.0 * amp) / Math.PI;
-        for (let k = 1; k <= nTerms; k++) {
-          const n = 2 * k - 1;
-          coeffs.push({ n: n, amp: factor / n });
-          highestHarmonic = n;
-        }
-      } else if (shape === 'triangle') {
-        const factor = (8.0 * amp) / (Math.PI * Math.PI);
-        for (let k = 1; k <= nTerms; k++) {
-          const n = 2 * k - 1;
-          const sign = (k % 2 === 1) ? 1.0 : -1.0;
-          coeffs.push({ n: n, amp: sign * factor / (n * n) });
-          highestHarmonic = n;
-        }
-      } else if (shape === 'sawtooth') {
-        const factor = (2.0 * amp) / Math.PI;
-        for (let n = 1; n <= nTerms; n++) {
-          const sign = (n % 2 === 1) ? 1.0 : -1.0;
-          coeffs.push({ n: n, amp: sign * factor / n });
-          highestHarmonic = n;
-        }
-      }
-      return { coeffs, highestHarmonic };
-    }
-
-    function evalFourierSum(t, shape, nTerms, amp, f0) {
-      const omega0 = 2 * Math.PI * f0;
-      const { coeffs } = getHarmonicCoefficients(shape, nTerms, amp);
-      let sum = 0.0;
-      for (let i = 0; i < coeffs.length; i++) {
-        sum += coeffs[i].amp * Math.sin(coeffs[i].n * omega0 * t);
-      }
-      return sum;
-    }
-
-    function evalLatestHarmonic(t, shape, nTerms, amp, f0) {
-      const omega0 = 2 * Math.PI * f0;
-      const { coeffs } = getHarmonicCoefficients(shape, nTerms, amp);
-      if (coeffs.length === 0) return 0.0;
-      const latest = coeffs[coeffs.length - 1];
-      return latest.amp * Math.sin(latest.n * omega0 * t);
-    }
-
-    function calculateError() {
-      const numSamples = 200;
-      const periodSec = 1.0 / state.f0;
-      let sumSqError = 0.0;
-
-      for (let m = 0; m < numSamples; m++) {
-        const t = (m / numSamples) * periodSec;
-        const targetVal = state.amp * evalWaveform(2 * Math.PI * state.f0 * t, state.shape);
-        const fourierVal = evalFourierSum(t, state.shape, state.nTerms, state.amp, state.f0);
-        const err = targetVal - fourierVal;
-        sumSqError += err * err;
-      }
-
-      const mse = sumSqError / numSamples;
-      const rmse = Math.sqrt(mse);
-      const rmsePercent = (rmse / state.amp) * 100.0;
-      return { mse, rmse, rmsePercent };
-    }
 
     function initAudio() {
       if (audioCtx) return;
@@ -723,7 +1003,7 @@
       masterGain.gain.setValueAtTime(0.4, now);
       masterGain.connect(audioCtx.destination);
 
-      const { coeffs } = getHarmonicCoefficients(state.shape, state.nTerms, state.amp);
+      const coeffs = state.dsp.coeffs || PythonDSP.getHarmonicCoefficients(state.shape, state.nTerms, state.amp).coeffs;
 
       oscArray = coeffs.map(({ n, amp }) => {
         const osc = audioCtx.createOscillator();
@@ -757,10 +1037,19 @@
       if (btn) btn.classList.toggle('active', state.isPlayingAudio);
     }
 
-    function updateMathMetrics() {
-      const { coeffs, highestHarmonic } = getHarmonicCoefficients(state.shape, state.nTerms, state.amp);
-      const latestHarmonic = coeffs[coeffs.length - 1];
-      const err = calculateError();
+    async function updateMathMetrics() {
+      // Calculate Fourier harmonic expansions via API service
+      state.dsp = await SignalLabsAPI.calculateFourier({
+        shape: state.shape,
+        n_terms: state.nTerms,
+        amp: state.amp,
+        f0: state.f0,
+        time_window_ms: state.timeWindowMs
+      });
+
+      const dsp = state.dsp;
+      const highestHarmonic = dsp.highestHarmonic;
+      const latestHarmonic = dsp.latestHarmonic;
 
       const elF0 = document.getElementById('f-metric-f0');
       const elN = document.getElementById('f-metric-n');
@@ -777,20 +1066,13 @@
       if (elHighestH) elHighestH.textContent = `Highest Harmonic: n = ${highestHarmonic}`;
       if (elLatestH) elLatestH.textContent = `n = ${latestHarmonic.n}`;
       if (elLatestFreq) elLatestFreq.textContent = `Freq = ${(latestHarmonic.n * state.f0).toFixed(1)} Hz`;
-      if (elRmse) elRmse.textContent = `${err.rmsePercent.toFixed(1)}%`;
-      if (elMse) elMse.textContent = `MSE = ${err.mse.toFixed(4)}`;
+      if (elRmse) elRmse.textContent = `${dsp.rmsePercent.toFixed(1)}%`;
+      if (elMse) elMse.textContent = `MSE = ${dsp.mse.toFixed(4)}`;
 
       if (elStatus && elStatusSub) {
-        if (state.shape === 'triangle') {
-          elStatus.textContent = 'Smooth Decay (1/n²)'; elStatus.style.color = 'var(--ok)';
-          elStatusSub.textContent = 'Rapid convergence, minimal ringing';
-        } else if (state.nTerms >= 5) {
-          elStatus.textContent = 'Gibbs Ringing Active'; elStatus.style.color = 'var(--warn)';
-          elStatusSub.textContent = '~9% overshoot near jump discontinuity';
-        } else {
-          elStatus.textContent = 'Coarse Approximation'; elStatus.style.color = 'var(--trace-a)';
-          elStatusSub.textContent = 'Low harmonic terms count';
-        }
+        elStatus.textContent = dsp.status;
+        elStatus.style.color = dsp.statusColor;
+        elStatusSub.textContent = dsp.statusSub;
       }
 
       const elReadoutShape = document.getElementById('f-readout-shape');
@@ -843,16 +1125,18 @@
       ctx.beginPath(); ctx.strokeStyle = 'rgba(255, 180, 84, 0.35)'; ctx.lineWidth = 1.8; ctx.setLineDash([3, 3]);
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const targetVal = state.amp * evalWaveform(2 * Math.PI * state.f0 * t, state.shape);
+        const targetVal = state.amp * PythonDSP.evalWaveform(2 * Math.PI * state.f0 * t, state.shape);
         const py = midY - targetVal * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.stroke(); ctx.setLineDash([]);
 
+      const coeffs = state.dsp?.coeffs || PythonDSP.getHarmonicCoefficients(state.shape, state.nTerms, state.amp).coeffs;
+
       ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2.4; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 10;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const fourierVal = evalFourierSum(t, state.shape, state.nTerms, state.amp, state.f0);
+        const fourierVal = PythonDSP.evalFourierSum(t, coeffs, state.f0);
         const py = midY - fourierVal * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -870,10 +1154,13 @@
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
       const midY = height / 2; const scaleY = (height / 2 - 10) / 1.2;
 
+      const latestHarmonic = state.dsp?.latestHarmonic || { n: 1, amp: state.amp };
+      const omega0 = 2 * Math.PI * state.f0;
+
       ctx.beginPath(); ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2.0; ctx.shadowColor = '#34d399'; ctx.shadowBlur = 8;
       for (let px = 0; px < width; px++) {
         const t = tNow + (px / width) * tWindow;
-        const compVal = evalLatestHarmonic(t, state.shape, state.nTerms, state.amp, state.f0);
+        const compVal = latestHarmonic.amp * Math.sin(latestHarmonic.n * omega0 * t);
         const py = midY - compVal * scaleY;
         if (px === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
@@ -890,8 +1177,10 @@
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
 
-      const { coeffs, highestHarmonic } = getHarmonicCoefficients(state.shape, state.nTerms, state.amp);
-      const latestHarmonic = coeffs[coeffs.length - 1];
+      const dsp = state.dsp || PythonDSP.calculateFourierMetrics(state.shape, state.nTerms, state.amp, state.f0);
+      const coeffs = dsp.coeffs;
+      const highestHarmonic = dsp.highestHarmonic;
+      const latestHarmonic = dsp.latestHarmonic;
 
       const maxHarmonicAxis = Math.max(highestHarmonic, 25);
       const coeffMap = new Array(maxHarmonicAxis + 1).fill(0.0);
@@ -1022,12 +1311,13 @@
     return {
       init: function () { bindEvents(); updateMathMetrics(); },
       render: render,
-      stopAudio: stopAudio
+      stopAudio: stopAudio,
+      getDSP: function () { return state.dsp; }
     };
   })();
 
   // =========================================================================
-  // 6. LAB 4: CONVOLUTION & FILTERING ENGINE
+  // 7. LAB 4: CONVOLUTION & FILTERING ENGINE
   // =========================================================================
   const convolutionLab = (function () {
     const state = {
@@ -1045,7 +1335,8 @@
       tValue: 0.0,
       tRange: 5.0,
 
-      isAnimating: false
+      isAnimating: false,
+      dsp: PythonDSP.calculateConvolutionMetrics([1, 2, 1], [1, 1], 2)
     };
 
     let animShiftInterval = null;
@@ -1066,62 +1357,8 @@
       delay: [0, 0, 1]
     };
 
-    // ── Compute Exact Discrete Convolution: y[n] = sum_k x[k] * h[n-k]
-    function computeDiscreteConvolution(xSeq, hSeq) {
-      const Lx = xSeq.length;
-      const Lh = hSeq.length;
-      const Ly = Lx + Lh - 1;
-      const ySeq = new Array(Ly).fill(0);
-
-      for (let n = 0; n < Ly; n++) {
-        let sum = 0;
-        for (let k = 0; k < Lx; k++) {
-          const hIdx = n - k;
-          if (hIdx >= 0 && hIdx < Lh) {
-            sum += xSeq[k] * hSeq[hIdx];
-          }
-        }
-        ySeq[n] = Math.round(sum * 1000) / 1000;
-      }
-      return ySeq;
-    }
-
-    // ── Compute Step-by-Step Mathematical Calculation String ─────────
-    function computeStepMathString(xSeq, hSeq, nIndex) {
-      const Lx = xSeq.length;
-      const Lh = hSeq.length;
-      const Ly = Lx + Lh - 1;
-
-      if (nIndex < 0 || nIndex >= Ly) return `y[${nIndex}] = 0 (Outside output range)`;
-
-      const terms = [];
-      let totalSum = 0;
-
-      for (let k = 0; k < Lx; k++) {
-        const hIdx = nIndex - k;
-        if (hIdx >= 0 && hIdx < Lh) {
-          const valX = xSeq[k];
-          const valH = hSeq[hIdx];
-          const prod = valX * valH;
-          totalSum += prod;
-          terms.push({ k, hIdx, valX, valH, prod });
-        }
-      }
-
-      if (terms.length === 0) {
-        return `y[${nIndex}] = 0 (No overlapping samples)`;
-      }
-
-      // Format equation string
-      const expStr = terms.map(t => `x[${t.k}]h[${t.nIndex - t.k}]`).join(' + ');
-      const valStr = terms.map(t => `${t.valX}×${t.valH}`).join(' + ');
-      const roundedSum = Math.round(totalSum * 1000) / 1000;
-
-      return `y[${nIndex}] = ${expStr} = ${valStr} = ${roundedSum}`;
-    }
-
-    // ── Math & Metrics Update ────────────────────────────────────────
-    function updateMathMetrics() {
+    // ── Math & Metrics Update via API Service ────────────────────────
+    async function updateMathMetrics() {
       state.x = xPresets[state.presetX] || xPresets.tri;
       state.h = hPresets[state.presetH] || hPresets.rect;
 
@@ -1139,9 +1376,17 @@
         }
       }
 
-      const ySeq = computeDiscreteConvolution(state.x, state.h);
-      const currentYVal = (state.nIndex >= 0 && state.nIndex < Ly) ? ySeq[state.nIndex] : 0;
-      const mathStr = computeStepMathString(state.x, state.h, state.nIndex);
+      // Compute convolution via API service
+      state.dsp = await SignalLabsAPI.calculateConvolution({
+        x: state.x,
+        h: state.h,
+        n_index: state.nIndex,
+        mode: state.mode
+      });
+
+      const dsp = state.dsp;
+      const currentYVal = dsp.current_y;
+      const mathStr = dsp.math_str;
 
       // DOM Elements
       const elMode = document.getElementById('c-metric-mode');
@@ -1159,16 +1404,7 @@
       if (elN) elN.textContent = state.mode === 'continuous' ? `t = ${state.tValue.toFixed(2)}` : `n = ${state.nIndex}`;
       if (elNSub) elNSub.textContent = state.mode === 'continuous' ? 'Shift time t' : 'Shift index n';
 
-      // Count overlap terms
-      let overlapCount = 0;
-      for (let k = 0; k < Lx; k++) {
-        const hIdx = state.nIndex - k;
-        if (hIdx >= 0 && hIdx < Lh && state.x[k] !== 0 && state.h[hIdx] !== 0) {
-          overlapCount++;
-        }
-      }
-
-      if (elOverlap) elOverlap.textContent = `${overlapCount} Terms`;
+      if (elOverlap) elOverlap.textContent = `${dsp.overlap_count} Terms`;
       if (elYVal) elYVal.textContent = state.mode === 'continuous' ? `y(t) = ${currentYVal.toFixed(2)}` : `y[${state.nIndex}] = ${currentYVal}`;
       if (elLength) elLength.textContent = `Output Length L_y = ${Ly}`;
       if (elEqText) elEqText.textContent = mathStr;
@@ -1187,7 +1423,7 @@
 
       if (elScope1Sub) elScope1Sub.textContent = `Input Signal x[k] · Length L_x = ${Lx} · x = [${state.x.join(', ')}]`;
       if (elScope2Sub) elScope2Sub.textContent = `Flipped & Shifted Filter h[${state.nIndex}−k] · Filter h = [${state.h.join(', ')}]`;
-      if (elScope3Sub) elScope3Sub.textContent = `Overlap Products x[k] × h[${state.nIndex}−k] · Active Terms: ${overlapCount}`;
+      if (elScope3Sub) elScope3Sub.textContent = `Overlap Products x[k] × h[${state.nIndex}−k] · Active Terms: ${dsp.overlap_count}`;
       if (elScope4Sub) elScope4Sub.textContent = `Convolution Output y[n] · Length L_y = ${Ly} · Active: y[${state.nIndex}] = ${currentYVal}`;
     }
 
@@ -1197,7 +1433,7 @@
 
       const dspX = state.x;
       const dspH = state.h;
-      const dspY = computeDiscreteConvolution(dspX, dspH);
+      const dspY = state.dsp?.y || PythonDSP.computeDiscreteConvolution(dspX, dspH);
 
       drawStemScope('canvas-c-x', dspX, 0, 'Input x[k]', '#ffb454');
       drawFlippedShiftedScope('canvas-c-hshift', dspH, dspX.length, state.nIndex, '#38bdf8');
@@ -1498,12 +1734,13 @@
     return {
       init: function () { bindEvents(); updateMathMetrics(); },
       render: render,
-      stopAudio: function () { stopShiftAnimation(); }
+      stopAudio: function () { stopShiftAnimation(); },
+      getDSP: function () { return state.dsp; }
     };
   })();
 
   // =========================================================================
-  // 7. COMMON UTILS & ANIMATION LOOP
+  // 8. COMMON UTILS & ANIMATION LOOP
   // =========================================================================
   function bindInput(id, fn) {
     const el = document.getElementById(id);
