@@ -259,116 +259,68 @@ function toast(msg, type = "") {
 function setStatus(msg) { $("status-text").textContent = msg; }
 
 /* --------------------------------------------------------------- *
- * 5. FFT (radix-2, real input via Hann window) — shared by         *
- *    spectrum analyzer + spectrogram, all on real decoded PCM      *
+ * 5. SPECTRAL ANALYSIS (Python backend API requests + caching)     *
  * --------------------------------------------------------------- */
 
-function fft(re, im) {
-  const n = re.length;
-  if (n <= 1) return;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+const spectralCache = {
+  fft: new Map(), // key: `${fileId}:${numBars}` -> bars array
+  stft: new Map(), // key: `${fileId}:${targetCols}:${targetRows}` -> spec object
+};
+
+async function fetchSpectrum(fileId, numBars = 48, fftSize = 2048) {
+  if (!fileId) return null;
+  const key = `${fileId}:${numBars}`;
+  if (spectralCache.fft.has(key)) {
+    return spectralCache.fft.get(key);
   }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
-    const wr = Math.cos(ang), wi = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let cwr = 1, cwi = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const ur = re[i + k], ui = im[i + k];
-        const vr = re[i + k + len / 2] * cwr - im[i + k + len / 2] * cwi;
-        const vi = re[i + k + len / 2] * cwi + im[i + k + len / 2] * cwr;
-        re[i + k] = ur + vr; im[i + k] = ui + vi;
-        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
-        const nwr = cwr * wr - cwi * wi, nwi = cwr * wi + cwi * wr;
-        cwr = nwr; cwi = nwi;
-      }
+  const promise = (async () => {
+    try {
+      const res = await fetch(`${API}/fft/${encodeURIComponent(fileId)}?num_bars=${numBars}&fft_size=${fftSize}`);
+      if (!res.ok) throw new Error("FFT request failed");
+      const data = await res.json();
+      return data.bars;
+    } catch (err) {
+      console.error("FFT error:", err);
+      return null;
     }
-  }
-}
-
-function nextPow2(n) { let p = 1; while (p < n) p <<= 1; return p; }
-
-/** Compute a log-binned magnitude spectrum (0..1 normalized dB) for a mono Float32Array. */
-function computeSpectrum(samples, sr, numBars = 48, fftSize = 2048) {
-  const size = nextPow2(Math.min(fftSize, nextPow2(Math.max(1, samples.length))));
-  const re = new Float64Array(size);
-  const im = new Float64Array(size);
-  const start = Math.max(0, Math.floor((samples.length - size) / 2));
-  for (let i = 0; i < size; i++) {
-    const s = samples[start + i] || 0;
-    const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1)); // Hann
-    re[i] = s * w;
-  }
-  fft(re, im);
-  const half = size / 2;
-  const mags = new Float64Array(half);
-  for (let i = 0; i < half; i++) mags[i] = Math.hypot(re[i], im[i]) / half;
-
-  const minHz = 20, maxHz = sr / 2;
-  const bars = new Float64Array(numBars);
-  const logMin = Math.log10(minHz), logMax = Math.log10(maxHz);
-  for (let b = 0; b < numBars; b++) {
-    const f0 = Math.pow(10, logMin + ((logMax - logMin) * b) / numBars);
-    const f1 = Math.pow(10, logMin + ((logMax - logMin) * (b + 1)) / numBars);
-    const i0 = Math.max(1, Math.floor((f0 / maxHz) * half));
-    const i1 = Math.min(half, Math.ceil((f1 / maxHz) * half));
-    let peak = 0;
-    for (let i = i0; i < i1; i++) peak = Math.max(peak, mags[i]);
-    const db = 20 * Math.log10(peak + 1e-6);
-    bars[b] = Math.max(0, Math.min(1, (db + 90) / 90)); // normalize -90..0dB -> 0..1
-  }
+  })();
+  spectralCache.fft.set(key, promise);
+  const bars = await promise;
+  spectralCache.fft.set(key, bars);
   return bars;
 }
 
-/** Real STFT-based spectrogram. Returns {cols, rows, data(Float32 0..1), sr, fftSize, hopSize, durationS}. */
-function computeSpectrogram(samples, sr, targetCols = 360, targetRows = 160, fftSize = 1024) {
-  const n = samples.length;
-  if (n < fftSize) fftSize = nextPow2(Math.max(64, n));
-  let hop = Math.max(32, Math.floor((n - fftSize) / Math.max(1, targetCols - 1)));
-  let cols = Math.max(1, Math.floor((n - fftSize) / hop) + 1);
-  if (cols > targetCols * 2) { hop = Math.floor((n - fftSize) / targetCols); cols = Math.max(1, Math.floor((n - fftSize) / hop) + 1); }
-
-  const half = fftSize / 2;
-  const window = new Float64Array(fftSize);
-  for (let i = 0; i < fftSize; i++) window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (fftSize - 1));
-
-  const minHz = 20, maxHz = sr / 2;
-  const logMin = Math.log10(minHz), logMax = Math.log10(maxHz);
-  const rowLo = new Int32Array(targetRows), rowHi = new Int32Array(targetRows);
-  for (let r = 0; r < targetRows; r++) {
-    const f0 = Math.pow(10, logMin + ((logMax - logMin) * r) / targetRows);
-    const f1 = Math.pow(10, logMin + ((logMax - logMin) * (r + 1)) / targetRows);
-    rowLo[r] = Math.max(1, Math.floor((f0 / maxHz) * half));
-    rowHi[r] = Math.min(half, Math.ceil((f1 / maxHz) * half));
+async function fetchSpectrogram(fileId, targetCols = 360, targetRows = 160, fftSize = 1024) {
+  if (!fileId) return null;
+  const key = `${fileId}:${targetCols}:${targetRows}`;
+  if (spectralCache.stft.has(key)) {
+    return spectralCache.stft.get(key);
   }
-
-  const data = new Float32Array(cols * targetRows);
-  const re = new Float64Array(fftSize);
-  const im = new Float64Array(fftSize);
-
-  for (let c = 0; c < cols; c++) {
-    const start = c * hop;
-    im.fill(0);
-    for (let i = 0; i < fftSize; i++) {
-      const s = samples[start + i] || 0;
-      re[i] = s * window[i];
+  const promise = (async () => {
+    try {
+      const res = await fetch(
+        `${API}/stft/${encodeURIComponent(fileId)}?target_cols=${targetCols}&target_rows=${targetRows}&fft_size=${fftSize}`
+      );
+      if (!res.ok) throw new Error("STFT request failed");
+      const data = await res.json();
+      return {
+        cols: data.cols,
+        rows: data.rows,
+        data: new Float32Array(data.data),
+        sr: data.sample_rate,
+        fftSize: data.fft_size,
+        hopSize: data.hop_size,
+        durationS: data.duration_s,
+      };
+    } catch (err) {
+      console.error("STFT error:", err);
+      return null;
     }
-    fft(re, im);
-    for (let r = 0; r < targetRows; r++) {
-      let peak = 0;
-      for (let i = rowLo[r]; i < rowHi[r]; i++) {
-        const mag = Math.hypot(re[i], im[i]) / half;
-        if (mag > peak) peak = mag;
-      }
-      const db = 20 * Math.log10(peak + 1e-7);
-      data[c * targetRows + r] = Math.max(0, Math.min(1, (db + 95) / 95));
-    }
-  }
-  return { cols, rows: targetRows, data, sr, fftSize, hopSize: hop, durationS: n / sr };
+  })();
+  spectralCache.stft.set(key, promise);
+  const spec = await promise;
+  spectralCache.stft.set(key, spec);
+  return spec;
 }
 
 /* --------------------------------------------------------------- *
@@ -425,12 +377,12 @@ function downsampleMinMax(samples, buckets) {
  * 7. COLORS                                                         *
  * --------------------------------------------------------------- */
 
-const COLOR_A = "rgba(255,180,84,FILLALPHA)";
-const COLOR_A_STROKE = "#ffb454";
-const COLOR_A_GLOW = "rgba(255,180,84,.5)";
-const COLOR_B = "rgba(155,140,255,FILLALPHA)";
-const COLOR_B_STROKE = "#9b8cff";
-const COLOR_B_GLOW = "rgba(155,140,255,.55)";
+const COLOR_A = "rgba(255,184,0,FILLALPHA)";
+const COLOR_A_STROKE = "#FFB800";
+const COLOR_A_GLOW = "rgba(255,184,0,.55)";
+const COLOR_B = "rgba(157,78,221,FILLALPHA)";
+const COLOR_B_STROKE = "#9D4EDD";
+const COLOR_B_GLOW = "rgba(157,78,221,.6)";
 
 /* --------------------------------------------------------------- *
  * 8. WAVEFORM PANEL — real envelope, ruler, zoom, selection,       *
@@ -520,7 +472,7 @@ function drawEnvelopeInView(ctx, samples, sr, w, h, color, glow, alpha = 1) {
   ctx.closePath();
   ctx.fillStyle = color.replace("FILLALPHA", "0.16");
   ctx.fill();
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = color.replace("FILLALPHA", "1");
   ctx.lineWidth = 1.25;
   ctx.shadowColor = glow;
   ctx.shadowBlur = 5;
@@ -536,10 +488,14 @@ function renderWaveform() {
 
   const { original, processed } = activeDisplayBuffers();
   const hasPreview = !!state.previewBuffer;
+  const isProcActive = state.abMode === "processed";
 
-  drawEnvelopeInView(waveCtx, monoOf(original), original.sampleRate, w, h, COLOR_A, COLOR_A_GLOW, hasPreview ? 0.5 : 1);
+  const origAlpha = hasPreview ? (isProcActive ? 0.3 : 1.0) : 1.0;
+  const procAlpha = hasPreview ? (isProcActive ? 1.0 : 0.3) : 1.0;
+
+  drawEnvelopeInView(waveCtx, monoOf(original), original.sampleRate, w, h, COLOR_A, COLOR_A_GLOW, origAlpha);
   if (hasPreview) {
-    drawEnvelopeInView(waveCtx, monoOf(processed), processed.sampleRate, w, h, COLOR_B, COLOR_B_GLOW, 0.95);
+    drawEnvelopeInView(waveCtx, monoOf(processed), processed.sampleRate, w, h, COLOR_B, COLOR_B_GLOW, procAlpha);
   }
 
   if (state.selection) {
@@ -627,24 +583,64 @@ function renderSpectrum() {
     spectrumCtx.fillText(`${db}`, 2, y + 3);
   }
 
-  const { original, processed } = activeDisplayBuffers();
-  const hasPreview = !!state.previewBuffer;
+  const { original } = activeDisplayBuffers();
+  const hasPreview = !!state.previewBuffer && !!state.previewFileId;
+  const isProcActive = (state.abMode === "processed");
   const numBars = Math.max(24, Math.floor(plotW / 10));
-  const origBars = computeSpectrum(monoOf(original), original.sampleRate, numBars);
-  const procBars = hasPreview ? computeSpectrum(monoOf(processed), processed.sampleRate, numBars) : null;
 
-  const gap = 2;
-  const bw = (plotW - gap * (numBars - 1)) / numBars;
-  for (let i = 0; i < numBars; i++) {
-    const x = axisPad.l + i * (bw + gap);
-    const bhA = origBars[i] * plotH;
-    spectrumCtx.fillStyle = procBars ? "rgba(255,180,84,.35)" : "rgba(255,180,84,.75)";
-    spectrumCtx.fillRect(x, axisPad.t + plotH - bhA, bw, bhA);
-    if (procBars) {
-      const bhB = procBars[i] * plotH;
-      spectrumCtx.fillStyle = "rgba(155,140,255,.82)";
-      const bw2 = bw * 0.55;
-      spectrumCtx.fillRect(x + bw - bw2, axisPad.t + plotH - bhB, bw2, bhB);
+  const origKey = `${state.fileId}:${numBars}`;
+  const origBars = spectralCache.fft.get(origKey);
+  if (!origBars || origBars instanceof Promise) {
+    fetchSpectrum(state.fileId, numBars).then((bars) => {
+      if (bars) renderSpectrum();
+    });
+  }
+
+  let procBars = null;
+  if (hasPreview) {
+    const procKey = `${state.previewFileId}:${numBars}`;
+    procBars = spectralCache.fft.get(procKey);
+    if (!procBars || procBars instanceof Promise) {
+      fetchSpectrum(state.previewFileId, numBars).then((bars) => {
+        if (bars) renderSpectrum();
+      });
+    }
+  }
+
+  if (origBars && !(origBars instanceof Promise)) {
+    const gap = 2;
+    const bw = (plotW - gap * (numBars - 1)) / numBars;
+    const pBars = (hasPreview && procBars && !(procBars instanceof Promise)) ? procBars : null;
+    const origAlpha = hasPreview ? (isProcActive ? 0.3 : 1.0) : 1.0;
+    const procAlpha = hasPreview ? (isProcActive ? 1.0 : 0.3) : 1.0;
+
+    for (let i = 0; i < numBars; i++) {
+      const x = axisPad.l + i * (bw + gap);
+      const bhA = origBars[i] * plotH;
+      const bhB = pBars ? pBars[i] * plotH : 0;
+
+      if (pBars) {
+        if (isProcActive) {
+          // Draw inactive original in background (alpha 0.3), active processed in foreground (alpha 1.0)
+          spectrumCtx.fillStyle = `rgba(255,184,0,${origAlpha})`;
+          spectrumCtx.fillRect(x, axisPad.t + plotH - bhA, bw, bhA);
+
+          const bw2 = bw * 0.65;
+          spectrumCtx.fillStyle = `rgba(157,78,221,${procAlpha})`;
+          spectrumCtx.fillRect(x + bw - bw2, axisPad.t + plotH - bhB, bw2, bhB);
+        } else {
+          // Draw inactive processed in background (alpha 0.3), active original in foreground (alpha 1.0)
+          const bw2 = bw * 0.65;
+          spectrumCtx.fillStyle = `rgba(157,78,221,${procAlpha})`;
+          spectrumCtx.fillRect(x + bw - bw2, axisPad.t + plotH - bhB, bw2, bhB);
+
+          spectrumCtx.fillStyle = `rgba(255,184,0,${origAlpha})`;
+          spectrumCtx.fillRect(x, axisPad.t + plotH - bhA, bw, bhA);
+        }
+      } else {
+        spectrumCtx.fillStyle = `rgba(255,184,0,${origAlpha})`;
+        spectrumCtx.fillRect(x, axisPad.t + plotH - bhA, bw, bhA);
+      }
     }
   }
 
@@ -725,15 +721,23 @@ function drawEqCurveOverlay(ctx, axisPad, plotW, plotH, sr) {
  * 10. SPECTROGRAM PANEL — real STFT heatmap                        *
  * --------------------------------------------------------------- */
 
-function colorRamp(v) {
+function colorRamp(v, theme = "original") {
   v = Math.max(0, Math.min(1, v));
-  const stops = [
-    [0.00, 9, 12, 17],
-    [0.35, 34, 26, 58],
-    [0.62, 122, 76, 200],
-    [0.82, 200, 120, 90],
-    [1.00, 255, 214, 140],
-  ];
+  const stops = theme === "processed"
+    ? [
+        [0.00, 9, 12, 17],
+        [0.30, 30, 15, 55],
+        [0.60, 105, 45, 165],
+        [0.85, 157, 78, 221], // #9D4EDD
+        [1.00, 235, 195, 255],
+      ]
+    : [
+        [0.00, 9, 12, 17],
+        [0.30, 45, 32, 12],
+        [0.60, 180, 115, 0],
+        [0.85, 255, 184, 0],  // #FFB800
+        [1.00, 255, 240, 180],
+      ];
   let i = 0;
   while (i < stops.length - 2 && v > stops[i + 1][0]) i++;
   const [t0, r0, g0, b0] = stops[i];
@@ -742,47 +746,99 @@ function colorRamp(v) {
   return [r0 + (r1 - r0) * f, g0 + (g1 - g0) * f, b0 + (b1 - b0) * f];
 }
 
-function computeSpectrogramForBuffer(buffer) {
-  const mono = monoOf(buffer);
-  return computeSpectrogram(mono, buffer.sampleRate);
+function getSpectrogramOffscreen(fileId, spec, theme) {
+  const cacheKey = `${fileId}:${theme}`;
+  if (!state.spectrogramCache || typeof state.spectrogramCache !== "object") {
+    state.spectrogramCache = {};
+  }
+  if (state.spectrogramCache[cacheKey]) {
+    return state.spectrogramCache[cacheKey];
+  }
+  const off = document.createElement("canvas");
+  off.width = spec.cols; off.height = spec.rows;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(spec.cols, spec.rows);
+  for (let c = 0; c < spec.cols; c++) {
+    for (let r = 0; r < spec.rows; r++) {
+      const v = spec.data[c * spec.rows + r];
+      const [rr, gg, bb] = colorRamp(v, theme);
+      const py = spec.rows - 1 - r;
+      const idx = (py * spec.cols + c) * 4;
+      img.data[idx] = rr; img.data[idx + 1] = gg; img.data[idx + 2] = bb; img.data[idx + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  state.spectrogramCache[cacheKey] = { canvas: off, meta: spec };
+  return state.spectrogramCache[cacheKey];
 }
 
 function renderSpectrogram() {
   const { w, h } = fitCanvas(spectrogramCanvas);
   spectrogramCtx.clearRect(0, 0, w, h);
-  if (!state.currentBuffer) return;
+  if (!state.currentBuffer || !state.fileId) return;
 
-  const { processed } = activeDisplayBuffers();
-  const cacheKey = processed === state.currentBuffer
-    ? `base:${state.fileId}`
-    : `preview:${state.previewFileId}`;
+  const hasPreview = !!state.previewBuffer && !!state.previewFileId;
+  const isProcActive = (state.abMode === "processed");
+  const origFileId = state.fileId;
+  const procFileId = state.previewFileId;
 
-  if (!state.spectrogramCache || state.spectrogramCache.key !== cacheKey) {
-    const spec = computeSpectrogramForBuffer(processed);
-    const off = document.createElement("canvas");
-    off.width = spec.cols; off.height = spec.rows;
-    const octx = off.getContext("2d");
-    const img = octx.createImageData(spec.cols, spec.rows);
-    for (let c = 0; c < spec.cols; c++) {
-      for (let r = 0; r < spec.rows; r++) {
-        const v = spec.data[c * spec.rows + r];
-        const [rr, gg, bb] = colorRamp(v);
-        const py = spec.rows - 1 - r;
-        const idx = (py * spec.cols + c) * 4;
-        img.data[idx] = rr; img.data[idx + 1] = gg; img.data[idx + 2] = bb; img.data[idx + 3] = 255;
-      }
-    }
-    octx.putImageData(img, 0, 0);
-    state.spectrogramCache = { key: cacheKey, canvas: off, meta: spec };
-    $("spectrogram-sub").textContent = `STFT ${spec.fftSize}/${spec.hopSize} · ${spec.durationS.toFixed(1)}s`;
+  const origSpec = spectralCache.stft.get(`${origFileId}:360:160`);
+  if (!origSpec || origSpec instanceof Promise) {
+    fetchSpectrogram(origFileId, 360, 160).then((spec) => {
+      if (spec) renderSpectrogram();
+    });
   }
 
+  let procSpec = null;
+  if (hasPreview) {
+    procSpec = spectralCache.stft.get(`${procFileId}:360:160`);
+    if (!procSpec || procSpec instanceof Promise) {
+      fetchSpectrogram(procFileId, 360, 160).then((spec) => {
+        if (spec) renderSpectrogram();
+      });
+    }
+  }
+
+  const origCached = (origSpec && !(origSpec instanceof Promise)) ? getSpectrogramOffscreen(origFileId, origSpec, "original") : null;
+  const procCached = (hasPreview && procSpec && !(procSpec instanceof Promise)) ? getSpectrogramOffscreen(procFileId, procSpec, "processed") : null;
+
+  const origAlpha = hasPreview ? (isProcActive ? 0.3 : 1.0) : 1.0;
+  const procAlpha = hasPreview ? (isProcActive ? 1.0 : 0.3) : 1.0;
+
   spectrogramCtx.imageSmoothingEnabled = true;
-  spectrogramCtx.drawImage(state.spectrogramCache.canvas, 0, 0, w, h);
+
+  if (hasPreview && procCached && origCached) {
+    if (isProcActive) {
+      // Original in background (0.3), Processed in foreground (1.0)
+      spectrogramCtx.globalAlpha = origAlpha;
+      spectrogramCtx.drawImage(origCached.canvas, 0, 0, w, h);
+      spectrogramCtx.globalAlpha = procAlpha;
+      spectrogramCtx.drawImage(procCached.canvas, 0, 0, w, h);
+    } else {
+      // Processed in background (0.3), Original in foreground (1.0)
+      spectrogramCtx.globalAlpha = procAlpha;
+      spectrogramCtx.drawImage(procCached.canvas, 0, 0, w, h);
+      spectrogramCtx.globalAlpha = origAlpha;
+      spectrogramCtx.drawImage(origCached.canvas, 0, 0, w, h);
+    }
+  } else if (origCached) {
+    spectrogramCtx.globalAlpha = origAlpha;
+    spectrogramCtx.drawImage(origCached.canvas, 0, 0, w, h);
+  } else if (procCached) {
+    spectrogramCtx.globalAlpha = procAlpha;
+    spectrogramCtx.drawImage(procCached.canvas, 0, 0, w, h);
+  }
+
+  spectrogramCtx.globalAlpha = 1.0;
+
+  const activeMeta = (isProcActive && procCached) ? procCached.meta : (origCached ? origCached.meta : null);
+  if (activeMeta) {
+    $("spectrogram-sub").textContent = `STFT ${activeMeta.fftSize}/${activeMeta.hopSize} · ${activeMeta.durationS.toFixed(1)}s`;
+  }
 
   if (state.htmlAudio.duration && state.currentBuffer) {
     const t = state.htmlAudio.currentTime;
-    const dur = state.spectrogramCache.meta.durationS;
+    const dur = (activeMeta && activeMeta.durationS) || state.currentBuffer.duration;
     const x = (t / Math.max(dur, 1e-9)) * w;
     if (x >= 0 && x <= w) {
       spectrogramCtx.save();
@@ -980,8 +1036,8 @@ function renderCompressorDetail(w, h, key) {
     const x = toX(db), y = toY(Math.max(xMin, Math.min(6, outDb)));
     db === xMin ? detailCtx.moveTo(x, y) : detailCtx.lineTo(x, y);
   }
-  detailCtx.strokeStyle = "#9b8cff"; detailCtx.lineWidth = 2;
-  detailCtx.shadowColor = "rgba(155,140,255,.6)"; detailCtx.shadowBlur = 5;
+  detailCtx.strokeStyle = "#9D4EDD"; detailCtx.lineWidth = 2;
+  detailCtx.shadowColor = "rgba(157,78,221,.6)"; detailCtx.shadowBlur = 5;
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
   let grStat = "—";
@@ -1024,12 +1080,18 @@ function renderDistortionDetail(w, h, key) {
   detailCtx.stroke(); detailCtx.shadowBlur = 0;
 
   let harmStat = "—";
-  if (state.previewBuffer && state.currentBuffer) {
-    const before = computeSpectrum(monoOf(state.currentBuffer), state.currentBuffer.sampleRate, 48);
-    const after = computeSpectrum(monoOf(state.previewBuffer), state.previewBuffer.sampleRate, 48);
-    let addedHi = 0;
-    for (let i = 24; i < 48; i++) addedHi += Math.max(0, after[i] - before[i]);
-    harmStat = addedHi > 0.3 ? "significant" : addedHi > 0.05 ? "moderate" : "subtle";
+  if (state.previewBuffer && state.currentBuffer && state.previewFileId && state.fileId) {
+    const beforeKey = `${state.fileId}:48`;
+    const afterKey = `${state.previewFileId}:48`;
+    const before = spectralCache.fft.get(beforeKey);
+    const after = spectralCache.fft.get(afterKey);
+    if (!before) fetchSpectrum(state.fileId, 48).then(() => { if (state.activeEffect === "distort") renderDetailPanel(); });
+    if (!after) fetchSpectrum(state.previewFileId, 48).then(() => { if (state.activeEffect === "distort") renderDetailPanel(); });
+    if (before && after && !(before instanceof Promise) && !(after instanceof Promise)) {
+      let addedHi = 0;
+      for (let i = 24; i < 48; i++) addedHi += Math.max(0, after[i] - before[i]);
+      harmStat = addedHi > 0.3 ? "significant" : addedHi > 0.05 ? "moderate" : "subtle";
+    }
   }
   $("detail-stats").innerHTML = `<span>mode: <b>${mode}</b></span><span>drive: <b>${driveDb} dB</b></span><span>added harmonics: <b>${harmStat}</b></span>`;
 }
@@ -1066,8 +1128,11 @@ function renderGenericDetail(w, h, key) {
     detailCtx.lineWidth = 1.2; detailCtx.shadowColor = glow; detailCtx.shadowBlur = 4;
     detailCtx.stroke(); detailCtx.restore();
   }
-  drawEnv(bEnv, COLOR_A, COLOR_A_GLOW, state.previewBuffer ? 0.5 : 1);
-  if (state.previewBuffer) drawEnv(aEnv, COLOR_B, COLOR_B_GLOW, 0.95);
+  const isProcActive = state.abMode === "processed";
+  const origAlpha = state.previewBuffer ? (isProcActive ? 0.3 : 1.0) : 1.0;
+  const procAlpha = isProcActive ? 1.0 : 0.3;
+  drawEnv(bEnv, COLOR_A, COLOR_A_GLOW, origAlpha);
+  if (state.previewBuffer) drawEnv(aEnv, COLOR_B, COLOR_B_GLOW, procAlpha);
 
   const pB = peakDb(bMono).toFixed(1), pA = peakDb(aMono).toFixed(1);
   const rB = rmsDb(bMono).toFixed(1), rA = rmsDb(aMono).toFixed(1);

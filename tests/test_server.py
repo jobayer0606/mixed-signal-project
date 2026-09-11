@@ -55,3 +55,27 @@ def test_upload_and_process_effect(tmp_path):
     dl_res = client.get(f"/api/download/{proc_file_id}")
     assert dl_res.status_code == 200
     assert dl_res.headers["content-type"] == "audio/wav"
+
+    # Test FFT endpoint (GET & POST)
+    fft_get = client.get(f"/api/fft/{file_id}?num_bars=32")
+    assert fft_get.status_code == 200
+    fft_data = fft_get.json()
+    assert "bars" in fft_data
+    assert len(fft_data["bars"]) == 32
+
+    fft_post = client.post("/api/fft", json={"file_id": file_id, "num_bars": 24})
+    assert fft_post.status_code == 200
+    assert len(fft_post.json()["bars"]) == 24
+
+    # Test STFT endpoint (GET & POST)
+    stft_get = client.get(f"/api/stft/{file_id}?target_cols=50&target_rows=40")
+    assert stft_get.status_code == 200
+    stft_data = stft_get.json()
+    assert "data" in stft_data
+    assert stft_data["rows"] == 40
+    assert len(stft_data["data"]) == stft_data["cols"] * 40
+
+    stft_post = client.post("/api/stft", json={"file_id": file_id, "target_cols": 30, "target_rows": 20})
+    assert stft_post.status_code == 200
+    assert stft_post.json()["rows"] == 20
+

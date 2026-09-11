@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from pyaudiolab.io_utils import load_wav, save_wav, info
 from pyaudiolab.effects import EFFECT_REGISTRY
+from pyaudiolab.spectral import compute_spectrum, compute_spectrogram
 
 logger = logging.getLogger("pyaudiolab.server")
 
@@ -106,6 +107,19 @@ class EffectRequest(BaseModel):
     file_id: str
     params: Dict[str, Any] = {}
     selection: Dict[str, float] | None = None  # {start_s: float, end_s: float}
+
+
+class FftRequest(BaseModel):
+    file_id: str
+    num_bars: int = 48
+    fft_size: int = 2048
+
+
+class StftRequest(BaseModel):
+    file_id: str
+    target_cols: int = 360
+    target_rows: int = 160
+    fft_size: int = 1024
 
 
 def _get_file_path(file_id: str) -> str:
@@ -200,6 +214,56 @@ async def download_audio(file_id: str):
         media_type="audio/wav",
         filename=f"pyaudiolab_{file_id[:8]}.wav",
         headers={"Accept-Ranges": "bytes"}
+    )
+
+
+@app.get("/api/fft/{file_id}")
+async def get_fft_spectrum(file_id: str, num_bars: int = 48, fft_size: int = 2048):
+    """Compute FFT log-magnitude spectrum for an audio session."""
+    path = _get_file_path(file_id)
+    try:
+        audio, sr = load_wav(path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading audio: {str(e)}")
+    return compute_spectrum(audio, sr, num_bars=num_bars, fft_size=fft_size)
+
+
+@app.post("/api/fft")
+async def post_fft_spectrum(req: FftRequest):
+    """Compute FFT log-magnitude spectrum for an audio session (POST)."""
+    return await get_fft_spectrum(req.file_id, req.num_bars, req.fft_size)
+
+
+@app.get("/api/stft/{file_id}")
+async def get_stft_spectrogram(
+    file_id: str,
+    target_cols: int = 360,
+    target_rows: int = 160,
+    fft_size: int = 1024,
+):
+    """Compute STFT spectrogram for an audio session."""
+    path = _get_file_path(file_id)
+    try:
+        audio, sr = load_wav(path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading audio: {str(e)}")
+    return compute_spectrogram(
+        audio,
+        sr,
+        target_cols=target_cols,
+        target_rows=target_rows,
+        fft_size=fft_size,
+    )
+
+
+@app.post("/api/stft")
+async def post_stft_spectrogram(req: StftRequest):
+    """Compute STFT spectrogram for an audio session (POST)."""
+    return await get_stft_spectrogram(
+        req.file_id,
+        req.target_cols,
+        req.target_rows,
+        req.fft_size,
     )
 
 
