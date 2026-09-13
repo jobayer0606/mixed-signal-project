@@ -28,8 +28,6 @@ from scipy.signal import iirpeak, sosfilt, tf2sos
 # Standard 10-band ISO 266 center frequencies (Hz)
 EQ_BAND_CENTERS = [31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
 
-
-
 def _peaking_sos_cookbook(
     center_hz: float,
     gain_db: float,
