@@ -29,66 +29,6 @@ from scipy.signal import iirpeak, sosfilt, tf2sos
 EQ_BAND_CENTERS = [31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
 
 
-def _peaking_sos(
-    center_hz: float,
-    gain_db: float,
-    q: float,
-    sr: int,
-) -> np.ndarray:
-    """Return second-order section coefficients for a peaking EQ filter.
-
-    Args:
-        center_hz: Filter center frequency in Hz.
-        gain_db:   Gain at center frequency in dB.
-        q:         Filter Q factor.
-        sr:        Sample rate in Hz.
-
-    Returns:
-        SOS array of shape (1, 6).
-    """
-    if abs(gain_db) < 1e-6:
-        # Identity: pass-through biquad
-        return np.array([[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]])
-
-    # Warp center frequency to normalised [0, 1] for scipy
-    w0 = center_hz / (sr / 2.0)
-    w0 = float(np.clip(w0, 1e-4, 1.0 - 1e-4))
-
-    if gain_db > 0:
-        # Boost: use iirpeak which designs a bell filter
-        b, a = iirpeak(w0, q)
-        # Scale b coefficients to achieve desired gain
-        # iirpeak gives unity gain; we apply linear amplitude scale at the peak
-        gain_lin = 10.0 ** (gain_db / 20.0)
-        # Approximate peaking: blend boosted with flat response
-        b_boosted = b * gain_lin
-        b_out = b_boosted
-        a_out = a
-    else:
-        # Cut: use iirpeak and attenuate
-        b, a = iirpeak(w0, q)
-        gain_lin = 10.0 ** (gain_db / 20.0)
-        # For a cut, attenuate the peak contribution
-        # b_cut[0] = (1 - gain_lin) * ... approach via direct biquad formula
-        # Use manual biquad peaking EQ formula (Audio EQ Cookbook - R. Bristow-Johnson)
-        A = 10.0 ** (gain_db / 40.0)  # sqrt of amplitude ratio
-        w0_rad = np.pi * w0
-        cos_w0 = np.cos(w0_rad)
-        sin_w0 = np.sin(w0_rad)
-        alpha = sin_w0 / (2.0 * q)
-
-        b0 = 1.0 + alpha * A
-        b1 = -2.0 * cos_w0
-        b2 = 1.0 - alpha * A
-        a0 = 1.0 + alpha / A
-        a1 = -2.0 * cos_w0
-        a2 = 1.0 - alpha / A
-
-        b_out = np.array([b0 / a0, b1 / a0, b2 / a0])
-        a_out = np.array([1.0, a1 / a0, a2 / a0])
-
-    return tf2sos(b_out, a_out)
-
 
 def _peaking_sos_cookbook(
     center_hz: float,
