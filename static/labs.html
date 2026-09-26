@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Labs — Interactive DSP Experiments</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="labs.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="app" id="labs-app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app-header">
+    <div class="brand">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <circle cx="13" cy="13" r="11" stroke="var(--trace-a)" stroke-width="1.8"/>
+        <path d="M7 13 Q10 7, 13 13 T19 13" stroke="var(--trace-b)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">SIGNAL LABS</span>
+        <span class="brand-tag">interactive DSP sandbox</span>
+      </div>
+    </div>
+
+    <div class="header-nav-tabs">
+      <a href="index.html" class="nav-tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Audio Studio
+      </a>
+      <a href="labs.html" class="nav-tab active">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        Signal Labs
+      </a>
+      <a href="speed-pitch.html" class="nav-tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Speed & Pitch
+      </a>
+    </div>
+
+    <div class="header-actions">
+      <a href="index.html" class="btn btn-ghost" title="Back to Audio Studio">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        ← Audio Studio
+      </a>
+    </div>
+  </header>
+
+  <!-- ============ MAIN WORKSPACE CONTAINER ============ -->
+  <div class="labs-body">
+
+    <!-- ============ TOP LAB SELECTOR CARDS ============ -->
+    <section class="lab-selector-bar">
+      <div class="lab-selector-head">
+        <span class="selector-title">AVAILABLE EXPERIMENTS</span>
+        <span class="selector-sub">Select an interactive lab module to launch</span>
+      </div>
+      <div class="lab-cards-grid">
+
+        <div class="lab-card active" data-lab="beat-freq" id="card-beat-freq">
+          <div class="lab-card-badge available">● Available</div>
+          <div class="lab-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h3l3-9 4 18 3-9h4"/><path d="M19 12h3" stroke-dasharray="2 2"/></svg>
+          </div>
+          <div class="lab-card-title">Wave Interference</div>
+          <div class="lab-card-desc">Beat Frequency & Superposition Lab</div>
+        </div>
+
+        <div class="lab-card" data-lab="sampling" id="card-sampling">
+          <div class="lab-card-badge available">● Available</div>
+          <div class="lab-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l4-8 4 4 4-6 6 10"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/><circle cx="11" cy="13" r="1.5" fill="currentColor"/><circle cx="15" cy="7" r="1.5" fill="currentColor"/></svg>
+          </div>
+          <div class="lab-card-title">Sampling & Aliasing</div>
+          <div class="lab-card-desc">Nyquist Rate & Reconstruction</div>
+        </div>
+
+        <div class="lab-card" data-lab="fourier" id="card-fourier">
+          <div class="lab-card-badge available">● Available</div>
+          <div class="lab-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16v4M8 12v8M12 4v16M16 8v16M20 14v6"/></svg>
+          </div>
+          <div class="lab-card-title">Fourier Series</div>
+          <div class="lab-card-desc">Harmonic Synthesis & Gibbs Phenomenon</div>
+        </div>
+
+        <div class="lab-card" data-lab="convolution" id="card-convolution">
+          <div class="lab-card-badge available">● Available</div>
+          <div class="lab-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10M12 7v10"/></svg>
+          </div>
+          <div class="lab-card-title">Convolution & Filters</div>
+          <div class="lab-card-desc">Flip, Shift, Overlap & LTI Filtering</div>
+        </div>
+
+        <div class="lab-card" data-lab="freq-explorer" id="card-freq-explorer">
+          <div class="lab-card-badge available">● Available</div>
+          <div class="lab-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 18h3l3-12 4 12 3-6 3 6h4"/><path d="M8 6v12M16 6v12" stroke-dasharray="2 2" stroke="var(--trace-a)"/></svg>
+          </div>
+          <div class="lab-card-title">Frequency Explorer</div>
+          <div class="lab-card-desc">Interactive FFT Filtering & Audition</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ WORKSPACE 1: WAVE INTERFERENCE ============ -->
+    <main class="lab-workspace" id="workspace-beat-freq">
+
+      <!-- LAB HEADER BANNER -->
+      <div class="lab-header-banner">
+        <div class="lab-info">
+          <h1 class="lab-main-title">Wave Interference & Beat Frequency Lab</h1>
+          <p class="lab-main-desc">
+            Explore acoustic and mathematical wave superposition: 
+            <span class="formula-badge">y(t) = y₁(t) + y₂(t)</span>. 
+            When two continuous waves with close frequencies \(f_1\) and \(f_2\) interfere, periodic amplitude pulsing occurs at the exact <strong>beat frequency</strong> \(f_{\text{beat}} = |f_1 - f_2|\).
+          </p>
+        </div>
+        <div class="lab-quick-presets">
+          <span class="preset-label">PRESETS:</span>
+          <button class="mini-btn preset-btn" id="preset-4hz">4 Hz Beat (440 + 444 Hz)</button>
+          <button class="mini-btn preset-btn" id="preset-1hz">1 Hz Slow (440 + 441 Hz)</button>
+          <button class="mini-btn preset-btn" id="preset-8hz">8 Hz Fast (440 + 448 Hz)</button>
+          <button class="mini-btn preset-btn" id="preset-unison">Unison (440 + 440 Hz)</button>
+          <button class="mini-btn preset-btn" id="preset-octave">Octave (440 + 880 Hz)</button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE GRID -->
+      <div class="lab-grid">
+
+        <!-- LEFT PANEL: CONTROLS -->
+        <aside class="lab-controls-panel panel">
+          <div class="panel-head">
+            <span class="panel-label">Signal Generator Rack</span>
+            <span class="panel-sub">Isolated Web Audio Engine</span>
+          </div>
+
+          <!-- WAVE 1 MODULE -->
+          <div class="wave-module wave-1-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-a"></i> WAVE 1 (f₁)</span>
+              <span class="module-readout" id="readout-f1">440.0 Hz</span>
+            </div>
+            
+            <div class="control-group">
+              <div class="control-label"><span>Frequency (f₁)</span><span class="val-tag" id="val-f1">440 Hz</span></div>
+              <input type="range" class="lab-range" id="input-f1" min="20" max="2000" step="0.5" value="440">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Amplitude (A₁)</span><span class="val-tag" id="val-a1">0.80</span></div>
+              <input type="range" class="lab-range" id="input-a1" min="0" max="1" step="0.01" value="0.8">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Waveform Shape</span></div>
+              <select class="lab-select" id="select-shape1">
+                <option value="sine" selected>Sine Wave (Pure Tone)</option>
+                <option value="square">Square Wave (Odd Harmonics)</option>
+                <option value="triangle">Triangle Wave (Soft Harmonics)</option>
+                <option value="sawtooth">Sawtooth Wave (Full Harmonics)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- WAVE 2 MODULE -->
+          <div class="wave-module wave-2-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-b"></i> WAVE 2 (f₂)</span>
+              <span class="module-readout" id="readout-f2">444.0 Hz</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Frequency (f₂)</span><span class="val-tag" id="val-f2">444 Hz</span></div>
+              <input type="range" class="lab-range" id="input-f2" min="20" max="2000" step="0.5" value="444">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Amplitude (A₂)</span><span class="val-tag" id="val-a2">0.80</span></div>
+              <input type="range" class="lab-range" id="input-a2" min="0" max="1" step="0.01" value="0.8">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Waveform Shape</span></div>
+              <select class="lab-select" id="select-shape2">
+                <option value="sine" selected>Sine Wave (Pure Tone)</option>
+                <option value="square">Square Wave (Odd Harmonics)</option>
+                <option value="triangle">Triangle Wave (Soft Harmonics)</option>
+                <option value="sawtooth">Sawtooth Wave (Full Harmonics)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- MASTER AUDIO & TRANSPORT MODULE -->
+          <div class="audio-transport-module">
+            <div class="transport-actions">
+              <button class="btn btn-solid" id="btn-lab-play">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Play Audio Tones
+              </button>
+              <button class="btn btn-ghost" id="btn-lab-stop">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>
+                Stop
+              </button>
+            </div>
+
+            <div class="control-group" style="margin-top:10px;">
+              <div class="control-label"><span>Master Volume</span><span class="val-tag" id="val-master-vol">50%</span></div>
+              <input type="range" class="lab-range" id="input-master-vol" min="0" max="1" step="0.01" value="0.5">
+            </div>
+
+            <div class="control-group" style="margin-top:10px;">
+              <div class="control-label"><span>Oscilloscope Time Window</span><span class="val-tag" id="val-time-window">25 ms</span></div>
+              <input type="range" class="lab-range" id="input-time-window" min="2" max="100" step="1" value="25">
+            </div>
+          </div>
+
+        </aside>
+
+        <!-- RIGHT PANEL: MATHEMATICAL METRICS & REAL-TIME OSCILLOSCOPES -->
+        <div class="lab-display-area">
+
+          <!-- MATHEMATICAL METRICS CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card primary-card">
+              <span class="metric-label">BEAT FREQUENCY |f₁ − f₂|</span>
+              <span class="metric-value" id="metric-beat-freq">4.0 Hz</span>
+              <span class="metric-sub" id="metric-beat-desc">Periodic amplitude pulse rate</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">CARRIER FREQ (f₁ + f₂)/2</span>
+              <span class="metric-value" id="metric-carrier-freq">442.0 Hz</span>
+              <span class="metric-sub">Average pitch center</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">BEAT PERIOD T_beat</span>
+              <span class="metric-value" id="metric-beat-period">0.250 s</span>
+              <span class="metric-sub">Time between peak swells</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">SUPERPOSITION STATE</span>
+              <span class="metric-value" id="metric-state">Acoustic Beat</span>
+              <span class="metric-sub" id="metric-state-sub">Envelope modulation</span>
+            </div>
+          </div>
+
+          <!-- OSCILLOSCOPE STACK -->
+          <div class="oscilloscope-stack">
+
+            <!-- OSCILLOSCOPE CONTROLS TOOLBAR -->
+            <div class="panel" style="padding: 6px 12px; margin-bottom: 4px; display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+              <span class="panel-label">Oscilloscope Controls</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn btn-ghost" id="btn-osc-freeze" style="padding: 3px 10px; font-size: 11px; height: auto;">⏸ Freeze</button>
+                <button class="btn btn-ghost" id="btn-osc-slow" style="padding: 3px 10px; font-size: 11px; height: auto;">Slow (0.1x)</button>
+                <button class="btn btn-ghost active" id="btn-osc-normal" style="padding: 3px 10px; font-size: 11px; height: auto;">Normal (1x)</button>
+              </div>
+            </div>
+
+            <!-- CANVAS 1: WAVE 1 -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-a"></i> WAVE 1 OSCILLOSCOPE — y₁(t)</span>
+                <span class="panel-sub" id="scope1-sub">f₁ = 440 Hz · Sine</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-wave1"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 2: WAVE 2 -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-b"></i> WAVE 2 OSCILLOSCOPE — y₂(t)</span>
+                <span class="panel-sub" id="scope2-sub">f₂ = 444 Hz · Sine</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-wave2"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 3: COMBINED INTERFERENCE -->
+            <div class="panel scope-panel hero-scope">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-sum"></i> COMBINED INTERFERENCE WAVE — y(t) = y₁(t) + y₂(t)</span>
+                <span class="panel-sub" id="scope-sum-sub">Beat Envelope f_beat = 4.0 Hz</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-wave-sum"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- ============ WORKSPACE 2: SAMPLING & ALIASING ============ -->
+    <main class="lab-workspace" id="workspace-sampling" hidden>
+
+      <!-- LAB HEADER BANNER -->
+      <div class="lab-header-banner">
+        <div class="lab-info">
+          <h1 class="lab-main-title">Sampling & Aliasing Laboratory</h1>
+          <p class="lab-main-desc">
+            Explore continuous signal discretization and Nyquist-Shannon aliasing: 
+            <span class="formula-badge">f_N = F_s / 2</span>. 
+            When input signal frequency \(f\) exceeds the Nyquist limit \(F_s / 2\), the sampled points fold into the baseband range, creating an apparent lower-frequency <strong>alias waveform</strong>.
+          </p>
+        </div>
+        <div class="lab-quick-presets">
+          <span class="preset-label">PRESETS:</span>
+          <button class="mini-btn preset-btn" id="s-preset-safe">Safe Sampling (100 Hz / 1000 Fs)</button>
+          <button class="mini-btn preset-btn" id="s-preset-near">Near Nyquist (400 Hz / 1000 Fs)</button>
+          <button class="mini-btn preset-btn" id="s-preset-limit">Nyquist Limit (500 Hz / 1000 Fs)</button>
+          <button class="mini-btn preset-btn" id="s-preset-alias">Aliasing (700 Hz / 1000 Fs)</button>
+          <button class="mini-btn preset-btn" id="s-preset-severe">Severe Aliasing (1800 Hz / 1000 Fs)</button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE GRID -->
+      <div class="lab-grid">
+
+        <!-- LEFT PANEL: CONTROLS -->
+        <aside class="lab-controls-panel panel">
+          <div class="panel-head">
+            <span class="panel-label">Sampling Parameters</span>
+            <span class="panel-sub">Discrete DSP Engine</span>
+          </div>
+
+          <!-- SIGNAL MODULE -->
+          <div class="wave-module wave-1-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-a"></i> INPUT SIGNAL (f)</span>
+              <span class="module-readout" id="s-readout-f">700.0 Hz</span>
+            </div>
+            
+            <div class="control-group">
+              <div class="control-label"><span>Signal Frequency (f)</span><span class="val-tag" id="s-val-f">700 Hz</span></div>
+              <input type="range" class="lab-range" id="s-input-f" min="10" max="2500" step="5" value="700">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Signal Amplitude (A)</span><span class="val-tag" id="s-val-a">0.80</span></div>
+              <input type="range" class="lab-range" id="s-input-a" min="0.1" max="1" step="0.01" value="0.8">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Waveform Shape</span></div>
+              <select class="lab-select" id="s-select-shape">
+                <option value="sine" selected>Sine Wave (Pure Tone)</option>
+                <option value="square">Square Wave (Odd Harmonics)</option>
+                <option value="triangle">Triangle Wave (Soft Harmonics)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- SAMPLING CLOCK MODULE -->
+          <div class="wave-module wave-2-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-cyan"></i> SAMPLING CLOCK (Fs)</span>
+              <span class="module-readout" id="s-readout-fs" style="color:var(--accent-cyan);">1000.0 Hz</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Sampling Rate (Fs)</span><span class="val-tag" id="s-val-fs">1000 Hz</span></div>
+              <input type="range" class="lab-range" id="s-input-fs" min="100" max="5000" step="10" value="1000">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Oscilloscope Window</span><span class="val-tag" id="s-val-time-window">15 ms</span></div>
+              <input type="range" class="lab-range" id="s-input-time-window" min="2" max="50" step="1" value="15">
+            </div>
+          </div>
+
+          <!-- AUDIO TONE PREVIEW -->
+          <div class="audio-transport-module">
+            <div class="transport-actions">
+              <button class="btn btn-solid" id="s-btn-play-orig">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Play Original Tone
+              </button>
+              <button class="btn btn-ghost" id="s-btn-play-alias">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Play Apparent Alias
+              </button>
+            </div>
+            <button class="btn btn-ghost" id="s-btn-stop" style="margin-top:6px;width:100%;justify-content:center;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>
+              Stop Audio
+            </button>
+          </div>
+
+        </aside>
+
+        <!-- RIGHT PANEL: MATHEMATICAL METRICS & OSCILLOSCOPES -->
+        <div class="lab-display-area">
+
+          <!-- MATHEMATICAL METRICS CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <span class="metric-label">SIGNAL FREQUENCY (f)</span>
+              <span class="metric-value" id="s-metric-f">700.0 Hz</span>
+              <span class="metric-sub">Input analog signal</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">SAMPLING RATE (Fs)</span>
+              <span class="metric-value" id="s-metric-fs">1000.0 Hz</span>
+              <span class="metric-sub">Clock rate (1/Fs interval)</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">NYQUIST LIMIT (f_N)</span>
+              <span class="metric-value" id="s-metric-nyquist">500.0 Hz</span>
+              <span class="metric-sub">Maximum safe frequency</span>
+            </div>
+
+            <div class="metric-card primary-card" id="s-card-alias">
+              <span class="metric-label">ALIASED FREQUENCY</span>
+              <span class="metric-value" id="s-metric-alias">300.0 Hz</span>
+              <span class="metric-sub" id="s-metric-ratio">Ratio Fs/f = 1.43</span>
+            </div>
+
+            <div class="metric-card" id="s-card-status">
+              <span class="metric-label">SAMPLING STATUS</span>
+              <span class="metric-value badge-aliasing" id="s-metric-status">ALIASING</span>
+              <span class="metric-sub" id="s-metric-status-sub">f > Fs/2 (folded)</span>
+            </div>
+          </div>
+
+          <!-- OSCILLOSCOPE STACK -->
+          <div class="oscilloscope-stack">
+
+            <!-- CANVAS 1: CONTINUOUS SIGNAL -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-a"></i> 1. CONTINUOUS ANALOG SIGNAL — y(t)</span>
+                <span class="panel-sub" id="s-scope1-sub">f = 700 Hz · Sine</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-s-orig"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 2: SAMPLED SIGNAL WITH STEMS -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-cyan"></i> 2. SAMPLED DISCRETE SIGNAL — y(kT_s)</span>
+                <span class="panel-sub" id="s-scope2-sub">Fs = 1000 Hz · Sample Stems & Dots</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-s-sampled"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 3: APPARENT RECONSTRUCTION ALIAS -->
+            <div class="panel scope-panel hero-scope" style="border-color:rgba(232,121,249,0.4);">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-alias"></i> 3. APPARENT RECONSTRUCTION / ALIAS — y_alias(t)</span>
+                <span class="panel-sub" id="s-scope-alias-sub">Apparent Alias Frequency f_alias = 300.0 Hz</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-s-alias"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- ============ WORKSPACE 3: FOURIER SERIES & HARMONICS ============ -->
+    <main class="lab-workspace" id="workspace-fourier" hidden>
+
+      <!-- LAB HEADER BANNER -->
+      <div class="lab-header-banner">
+        <div class="lab-info">
+          <h1 class="lab-main-title">Fourier Series & Harmonics Laboratory</h1>
+          <p class="lab-main-desc">
+            Build complex periodic signals by summing sinusoidal harmonics: 
+            <span class="formula-badge">y_N(t) = \sum_{k=1}^N c_k \sin(n_k \omega_0 t)</span>. 
+            Observe how adding higher Fourier terms reconstructs target waveforms, and watch <strong>Gibbs phenomenon overshoot</strong> near sharp step discontinuities.
+          </p>
+        </div>
+        <div class="lab-quick-presets">
+          <span class="preset-label">PRESETS:</span>
+          <button class="mini-btn preset-btn" id="f-preset-sq5">Square (5 Terms)</button>
+          <button class="mini-btn preset-btn" id="f-preset-sq15">Square (15 Terms)</button>
+          <button class="mini-btn preset-btn" id="f-preset-saw10">Sawtooth (10 Terms)</button>
+          <button class="mini-btn preset-btn" id="f-preset-tri10">Triangle (10 Terms)</button>
+          <button class="mini-btn preset-btn" id="f-preset-gibbs">Gibbs Ringing (Square 25 Terms)</button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE GRID -->
+      <div class="lab-grid">
+
+        <!-- LEFT PANEL: CONTROLS -->
+        <aside class="lab-controls-panel panel">
+          <div class="panel-head">
+            <span class="panel-label">Harmonic Synthesizer</span>
+            <span class="panel-sub">Fourier Series Engine</span>
+          </div>
+
+          <!-- TARGET WAVEFORM MODULE -->
+          <div class="wave-module wave-1-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-a"></i> TARGET SIGNAL</span>
+              <span class="module-readout" id="f-readout-shape">Square Wave</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Target Waveform</span></div>
+              <select class="lab-select" id="f-select-shape">
+                <option value="square" selected>Square Wave (Odd Harmonics ~ 1/n)</option>
+                <option value="sawtooth">Sawtooth Wave (All Harmonics ~ 1/n)</option>
+                <option value="triangle">Triangle Wave (Odd Harmonics ~ 1/n²)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Fundamental (f₀)</span><span class="val-tag" id="f-val-f0">100 Hz</span></div>
+              <input type="range" class="lab-range" id="f-input-f0" min="20" max="500" step="5" value="100">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Signal Amplitude (A)</span><span class="val-tag" id="f-val-amp">0.80</span></div>
+              <input type="range" class="lab-range" id="f-input-amp" min="0.1" max="1" step="0.01" value="0.8">
+            </div>
+          </div>
+
+          <!-- HARMONIC EXPANSION MODULE -->
+          <div class="wave-module wave-2-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-cyan"></i> HARMONICS TERMS (N)</span>
+              <span class="module-readout" id="f-readout-n" style="color:var(--accent-cyan);">N = 5 Terms</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Included Terms (N)</span><span class="val-tag" id="f-val-n">5 Terms</span></div>
+              <input type="range" class="lab-range" id="f-input-n" min="1" max="25" step="1" value="5">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Build Speed</span><span class="val-tag" id="f-val-speed">Medium</span></div>
+              <input type="range" class="lab-range" id="f-input-speed" min="1" max="10" step="1" value="5">
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Oscilloscope Window</span><span class="val-tag" id="f-val-time-window">20 ms</span></div>
+              <input type="range" class="lab-range" id="f-input-time-window" min="5" max="50" step="1" value="20">
+            </div>
+          </div>
+
+          <!-- HARMONIC BUILD ANIMATION & AUDIO CONTROLS -->
+          <div class="audio-transport-module">
+            <div class="transport-actions">
+              <button class="btn btn-solid" id="f-btn-play-anim">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Play Build Anim
+              </button>
+              <button class="btn btn-ghost" id="f-btn-pause-anim">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Pause / Step
+              </button>
+            </div>
+
+            <div class="transport-actions" style="margin-top:6px;">
+              <button class="btn btn-ghost" id="f-btn-reset-n">
+                Reset (N=1)
+              </button>
+              <button class="btn btn-ghost" id="f-btn-play-audio">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Audio Tone
+              </button>
+            </div>
+          </div>
+
+        </aside>
+
+        <!-- RIGHT PANEL: MATHEMATICAL METRICS & OSCILLOSCOPES -->
+        <div class="lab-display-area">
+
+          <!-- MATHEMATICAL METRICS CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <span class="metric-label">FUNDAMENTAL (f₀)</span>
+              <span class="metric-value" id="f-metric-f0">100.0 Hz</span>
+              <span class="metric-sub">Base Period T₀ = 10.0 ms</span>
+            </div>
+
+            <div class="metric-card primary-card">
+              <span class="metric-label">INCLUDED TERMS (N)</span>
+              <span class="metric-value" id="f-metric-n">5 Terms</span>
+              <span class="metric-sub" id="f-metric-highest-h">Highest Harmonic: n = 9</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">LATEST HARMONIC (n)</span>
+              <span class="metric-value" id="f-metric-latest-h" style="color:var(--ok);">n = 9</span>
+              <span class="metric-sub" id="f-metric-latest-freq">Freq = 900.0 Hz</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">RECONSTRUCTION RMSE</span>
+              <span class="metric-value" id="f-metric-rmse">9.2%</span>
+              <span class="metric-sub" id="f-metric-mse">MSE = 0.0054</span>
+            </div>
+
+            <div class="metric-card" id="f-card-gibbs">
+              <span class="metric-label">PHENOMENON STATUS</span>
+              <span class="metric-value" id="f-metric-status" style="font-size:14px;color:var(--warn);">Gibbs Ringing Active</span>
+              <span class="metric-sub" id="f-metric-status-sub">Overshoot near step</span>
+            </div>
+          </div>
+
+          <!-- OSCILLOSCOPE STACK -->
+          <div class="oscilloscope-stack">
+
+            <!-- CANVAS 1: TARGET VS FOURIER RECONSTRUCTION -->
+            <div class="panel scope-panel hero-scope">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-cyan"></i> 1. TARGET VS FOURIER PARTIAL SUM RECONSTRUCTION — y_N(t)</span>
+                <span class="panel-sub" id="f-scope1-sub">Amber = Ideal Target · Cyan = Fourier Partial Sum (N = 5)</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-f-sum"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 2: LATEST INDIVIDUAL HARMONIC -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-ok"></i> 2. LATEST HARMONIC COMPONENT — h_n(t)</span>
+                <span class="panel-sub" id="f-scope2-sub">Harmonic n = 9 · Amp = 0.113</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-f-component"></canvas>
+              </div>
+            </div>
+
+            <!-- CANVAS 3: HARMONIC MAGNITUDE SPECTRUM -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-alias"></i> 3. FOURIER MAGNITUDE SPECTRUM — |c_n| vs Harmonic n</span>
+                <span class="panel-sub" id="f-scope3-sub">Stem Plot |c_n| · Highlighted = n = 9</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-f-spectrum"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- ============ WORKSPACE 4: CONVOLUTION & FILTERING ============ -->
+    <main class="lab-workspace" id="workspace-convolution" hidden>
+
+      <!-- LAB HEADER BANNER -->
+      <div class="lab-header-banner">
+        <div class="lab-info">
+          <h1 class="lab-main-title">Convolution & Filtering Laboratory</h1>
+          <p class="lab-main-desc">
+            Explore linear time-invariant (LTI) signal filtering: 
+            <span class="formula-badge">y[n] = \sum_k x[k] h[n-k]</span> and 
+            <span class="formula-badge">y(t) = \int x(\tau) h(t-\tau) d\tau</span>. 
+            Observe how signals combine through <strong>flip, shift, overlap, multiplication, and integration</strong>.
+          </p>
+        </div>
+        <div class="lab-quick-presets">
+          <span class="preset-label">PRESETS:</span>
+          <button class="mini-btn preset-btn" id="c-preset-pulse-tri">Pulse * Triangle [1,2,1] * [1,1]</button>
+          <button class="mini-btn preset-btn" id="c-preset-ma-smooth">Moving Average Filter</button>
+          <button class="mini-btn preset-btn" id="c-preset-identity">Identity (x * δ = x)</button>
+          <button class="mini-btn preset-btn" id="c-preset-rect-rect">Continuous Rect * Rect</button>
+          <button class="mini-btn preset-btn" id="c-preset-step">Step Response</button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE GRID -->
+      <div class="lab-grid">
+
+        <!-- LEFT PANEL: CONTROLS -->
+        <aside class="lab-controls-panel panel">
+          <div class="panel-head">
+            <span class="panel-label">Convolution Engine</span>
+            <span class="panel-sub">LTI Filter Processor</span>
+          </div>
+
+          <!-- MODE SELECTOR MODULE -->
+          <div class="wave-module wave-1-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-a"></i> OPERATING MODE</span>
+              <span class="module-readout" id="c-readout-mode">Discrete y[n]</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Convolution Mode</span></div>
+              <select class="lab-select" id="c-select-mode">
+                <option value="discrete" selected>Discrete Convolution: y[n] = Σ x[k]h[n-k]</option>
+                <option value="continuous">Continuous Convolution: y(t) = ∫ x(τ)h(t-τ)dτ</option>
+                <option value="filter">Filter Demo (Moving Average / Low-Pass)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Output Index (n) / Time (t)</span><span class="val-tag" id="c-val-n">n = 2</span></div>
+              <input type="range" class="lab-range" id="c-input-n" min="0" max="6" step="1" value="2">
+            </div>
+          </div>
+
+          <!-- INPUT SEQUENCES / SIGNAL MODULE -->
+          <div class="wave-module wave-2-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-cyan"></i> SIGNALS x[k] & h[k]</span>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Input x[k] Preset</span></div>
+              <select class="lab-select" id="c-select-x">
+                <option value="tri" selected>Triangle Pulse [1, 2, 1]</option>
+                <option value="rect">Rectangular Pulse [1, 1, 1, 1]</option>
+                <option value="step">Step Signal [1, 1, 1, 1, 1]</option>
+                <option value="noisy">Noisy Sequence [1, 4, 2, 5, 3, 6, 2]</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Filter h[k] Preset</span></div>
+              <select class="lab-select" id="c-select-h">
+                <option value="rect" selected>Rect/Pulse Filter [1, 1]</option>
+                <option value="ma">Moving Average [0.33, 0.33, 0.33]</option>
+                <option value="delta">Identity Impulse δ[k] = [1]</option>
+                <option value="delay">Delay / Echo δ[k-2] = [0, 0, 1]</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- ANIMATION & PROCESS CONTROLS -->
+          <div class="audio-transport-module">
+            <div class="transport-actions">
+              <button class="btn btn-solid" id="c-btn-play-anim">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Play Shift
+              </button>
+              <button class="btn btn-ghost" id="c-btn-pause-anim">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Pause
+              </button>
+            </div>
+
+            <div class="transport-actions" style="margin-top:6px;">
+              <button class="btn btn-ghost" id="c-btn-step-prev">Step ←</button>
+              <button class="btn btn-ghost" id="c-btn-step-next">Step →</button>
+            </div>
+
+            <label class="live-toggle" style="margin-top:8px;padding-top:8px;">
+              <input type="checkbox" id="c-toggle-process" checked>
+              <span>Show Math Process</span>
+            </label>
+          </div>
+
+        </aside>
+
+        <!-- RIGHT PANEL: MATHEMATICAL METRICS & OSCILLOSCOPES -->
+        <div class="lab-display-area">
+
+          <!-- MATHEMATICAL METRICS CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <span class="metric-label">OPERATING MODE</span>
+              <span class="metric-value" id="c-metric-mode" style="font-size:15px;">Discrete [n]</span>
+              <span class="metric-sub" id="c-metric-mode-sub">y[n] = Σ x[k]h[n-k]</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">OUTPUT INDEX / TIME</span>
+              <span class="metric-value" id="c-metric-n">n = 2</span>
+              <span class="metric-sub" id="c-metric-n-sub">Shift position</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">ACTIVE OVERLAP</span>
+              <span class="metric-value" id="c-metric-overlap" style="color:var(--ok);">2 Terms</span>
+              <span class="metric-sub" id="c-metric-overlap-sub">Non-zero products</span>
+            </div>
+
+            <div class="metric-card primary-card">
+              <span class="metric-label">CURRENT y[n] VALUE</span>
+              <span class="metric-value" id="c-metric-yval">y[2] = 3</span>
+              <span class="metric-sub" id="c-metric-length">Output Length L_y = 4</span>
+            </div>
+          </div>
+
+          <!-- DYNAMIC MATHEMATICAL EQUATION DISPLAY BOX -->
+          <div class="detail-panel" id="c-equation-box">
+            <div class="detail-head">DYNAMIC STEP-BY-STEP CALCULATION</div>
+            <div class="detail-stats" id="c-equation-text" style="font:600 13px var(--ff-mono);color:var(--trace-a);">
+              y[2] = x[0]h[2] + x[1]h[1] + x[2]h[0] = 1×0 + 2×1 + 1×1 = 3
+            </div>
+          </div>
+
+          <!-- OSCILLOSCOPE / MULTI-VIEW STACK -->
+          <div class="oscilloscope-stack" id="c-views-container">
+
+            <!-- VIEW 1: INPUT SIGNAL x[k] -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-a"></i> 1. INPUT SIGNAL — x[k]</span>
+                <span class="panel-sub" id="c-scope1-sub">Length L_x = 3 · x = [1, 2, 1]</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-c-x"></canvas>
+              </div>
+            </div>
+
+            <!-- VIEW 2: FLIPPED & SHIFTED h[n-k] -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-cyan"></i> 2. FLIPPED & SHIFTED FILTER — h[n−k]</span>
+                <span class="panel-sub" id="c-scope2-sub">Shifted to n = 2 · Flipped h[−k]</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-c-hshift"></canvas>
+              </div>
+            </div>
+
+            <!-- VIEW 3: OVERLAP & MULTIPLICATION TERMS -->
+            <div class="panel scope-panel">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-ok"></i> 3. OVERLAP & MULTIPLICATION — x[k] × h[n−k]</span>
+                <span class="panel-sub" id="c-scope3-sub">Highlighted Non-Zero Overlap Pairs</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-c-overlap"></canvas>
+              </div>
+            </div>
+
+            <!-- VIEW 4: CONVOLUTION OUTPUT y[n] -->
+            <div class="panel scope-panel hero-scope">
+              <div class="panel-head">
+                <span class="panel-label"><i class="swatch swatch-ok"></i> 4. CONVOLUTION OUTPUT — y[n] = x[n] * h[n]</span>
+                <span class="panel-sub" id="c-scope4-sub">Length L_y = 4 · Highlighted: y[2] = 3</span>
+              </div>
+              <div class="canvas-wrap scope-wrap">
+                <canvas id="canvas-c-output"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- ============ WORKSPACE 5: FREQUENCY RANGE EXPLORER ============ -->
+    <main class="lab-workspace" id="workspace-freq-explorer" hidden>
+
+      <!-- LAB HEADER BANNER -->
+      <div class="lab-header-banner">
+        <div class="lab-info">
+          <h1 class="lab-main-title">FFT Frequency Range Explorer & Butterworth Filter Lab</h1>
+          <p class="lab-main-desc">
+            Upload an audio track (WAV/MP3) or load a signal sample. Inspect its real-time FFT spectrum, 
+            drag dual frequency handles to define your passband window, and listen to the filtered audio processed with an 
+            <span class="formula-badge">8th-order Butterworth Filter (-48 dB/oct)</span>.
+          </p>
+        </div>
+        <div class="lab-quick-presets">
+          <span class="preset-label">RANGE PRESETS:</span>
+          <button class="mini-btn preset-btn" id="fe-preset-phone">Phone Band (300 – 3000 Hz)</button>
+          <button class="mini-btn preset-btn" id="fe-preset-lp">Low-Pass (300 Hz)</button>
+          <button class="mini-btn preset-btn" id="fe-preset-hp">High-Pass (3000 Hz)</button>
+          <button class="mini-btn preset-btn" id="fe-preset-bass">Sub-Bass (20 – 150 Hz)</button>
+          <button class="mini-btn preset-btn" id="fe-preset-mids">Mid-Range (500 – 2500 Hz)</button>
+          <button class="mini-btn preset-btn" id="fe-preset-air">Air / Sizzle (4000 – 16000 Hz)</button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE GRID -->
+      <div class="lab-grid">
+
+        <!-- LEFT PANEL: CONTROLS & DSP CONFIG -->
+        <aside class="lab-controls-panel panel">
+          <div class="panel-head">
+            <span class="panel-label">Signal & Filter Rack</span>
+            <span class="panel-sub">Python DSP Engine</span>
+          </div>
+
+          <!-- AUDIO FILE SOURCE MODULE -->
+          <div class="wave-module wave-1-module" style="border-left-color: var(--accent-cyan);">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-cyan"></i> AUDIO SOURCE</span>
+              <span class="module-readout" id="fe-audio-readout" style="color:var(--accent-cyan);font-size:11px;">Sample Ready</span>
+            </div>
+
+            <input type="file" id="fe-file-input" accept=".wav,.mp3,audio/wav,audio/mp3,audio/mpeg" hidden>
+            
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-solid" id="fe-btn-upload" style="flex:1.2;font-size:11.5px;padding:7px 10px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Upload WAV/MP3
+              </button>
+              <button class="btn btn-ghost" id="fe-btn-demo-gen" title="Generate Harmonic Test Signal" style="flex:1;font-size:11px;padding:7px 6px;">
+                + Synth Signal
+              </button>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label"><span>Bundled Audio Samples</span></div>
+              <select class="lab-select" id="fe-select-sample">
+                <option value="test_dynamic.wav" selected>Dynamic Range Music Demo</option>
+                <option value="test_noise.wav">Full-Band White/Pink Noise</option>
+                <option value="test_sine_stereo.wav">Multi-Tone Harmonic Stereo</option>
+                <option value="test_sine_mono.wav">Pure 440 Hz Reference Sine</option>
+                <option value="test_silence.wav">Silence + Burst Tone</option>
+              </select>
+            </div>
+
+            <div class="detail-panel" style="margin-top:2px;padding:8px 10px;background:rgba(0,0,0,0.3);border-radius:var(--radius-xs);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span id="fe-loaded-filename" style="font:600 11px var(--ff-mono);color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">test_dynamic.wav</span>
+                <span id="fe-loaded-meta" style="font:10px var(--ff-mono);color:var(--text-dim);">44.1 kHz · 2.0s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- FILTER MODE SELECTOR MODULE -->
+          <div class="wave-module wave-2-module">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-a"></i> FILTER MODE</span>
+              <span class="module-readout" id="fe-mode-readout" style="color:var(--trace-a);">Band-Pass</span>
+            </div>
+
+            <div class="fe-filter-mode-selector" id="fe-mode-buttons">
+              <button class="fe-mode-btn" data-mode="lowpass" id="fe-btn-mode-lp" title="Pass frequencies below High Cutoff">
+                <span class="fe-mode-icon">⎽⎻</span> Low-Pass
+              </button>
+              <button class="fe-mode-btn" data-mode="highpass" id="fe-btn-mode-hp" title="Pass frequencies above Low Cutoff">
+                <span class="fe-mode-icon">⎻⎽</span> High-Pass
+              </button>
+              <button class="fe-mode-btn active" data-mode="bandpass" id="fe-btn-mode-bp" title="Pass frequencies between Low and High Cutoffs">
+                <span class="fe-mode-icon">⎽⎻⎽</span> Band-Pass
+              </button>
+              <button class="fe-mode-btn" data-mode="bandstop" id="fe-btn-mode-bs" title="Reject frequencies in selected band (Notch)">
+                <span class="fe-mode-icon">⎻⎽⎻</span> Notch
+              </button>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;font:10.5px var(--ff-mono);color:var(--text-dim);background:rgba(255,180,84,0.06);padding:6px 8px;border-radius:4px;border:1px solid rgba(255,180,84,0.2);">
+              <span>Topology: Butterworth IIR</span>
+              <span style="color:var(--trace-a);font-weight:600;">8th Order (-48 dB/oct)</span>
+            </div>
+          </div>
+
+          <!-- CUTOFF FREQUENCY HANDLES & SLIDERS -->
+          <div class="wave-module" style="border-left:3px solid var(--ok);">
+            <div class="module-head">
+              <span class="module-title"><i class="swatch swatch-ok"></i> FREQUENCY BOUNDS</span>
+              <span class="module-readout" id="fe-range-readout" style="color:var(--ok);">300 – 3000 Hz</span>
+            </div>
+
+            <!-- LOW CUTOFF (f_low) -->
+            <div class="control-group" id="fe-group-flow">
+              <div class="control-label">
+                <span>Low Cutoff (f<sub>low</sub>)</span>
+                <span class="val-tag" id="fe-val-flow">300 Hz</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="range" class="lab-range" id="fe-slider-flow" min="0" max="1000" step="1" value="391">
+                <input type="number" class="lab-select" id="fe-num-flow" min="20" max="20000" step="1" value="300" style="width:72px;padding:3px 6px;text-align:right;">
+              </div>
+            </div>
+
+            <!-- HIGH CUTOFF (f_high) -->
+            <div class="control-group" id="fe-group-fhigh">
+              <div class="control-label">
+                <span>High Cutoff (f<sub>high</sub>)</span>
+                <span class="val-tag" id="fe-val-fhigh">3000 Hz</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="range" class="lab-range" id="fe-slider-fhigh" min="0" max="1000" step="1" value="726">
+                <input type="number" class="lab-select" id="fe-num-fhigh" min="20" max="20000" step="1" value="3000" style="width:72px;padding:3px 6px;text-align:right;">
+              </div>
+            </div>
+
+            <label class="live-toggle" style="margin-top:2px;">
+              <input type="checkbox" id="fe-toggle-norm" checked>
+              <span>Auto-Normalize Output Audio (-0.5 dBFS)</span>
+            </label>
+          </div>
+
+          <!-- LISTEN & AUDITION MODULE -->
+          <div class="audio-transport-module" style="background:linear-gradient(180deg, rgba(255,180,84,0.12) 0%, var(--bg-input) 100%);border-color:rgba(255,180,84,0.4);">
+            <div class="panel-head" style="margin-bottom:2px;">
+              <span class="panel-label" style="color:var(--trace-a);">Audition & Listen</span>
+              <span class="panel-sub" id="fe-playback-status">Ready</span>
+            </div>
+
+            <!-- Big Action Button -->
+            <button class="btn btn-solid" id="fe-btn-listen" style="padding:10px 14px;font:700 13px var(--ff-mono);background:linear-gradient(180deg, #ffc570 0%, var(--trace-a) 100%);color:#180d00;box-shadow:0 0 16px var(--trace-a-glow);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+              <span>Listen to Selected Range</span>
+            </button>
+
+            <div class="transport-actions">
+              <button class="btn btn-ghost" id="fe-btn-play-orig" title="Play Original Audio for A/B comparison">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                Original A/B
+              </button>
+              <button class="btn btn-ghost" id="fe-btn-stop" title="Stop Audio Playback">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+                Stop
+              </button>
+            </div>
+
+            <!-- Seek and Time display -->
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+              <span id="fe-time-cur" style="font:600 10.5px var(--ff-mono);color:var(--trace-a);">00:00.00</span>
+              <input type="range" class="lab-range" id="fe-seek" min="0" max="1000" value="0" style="flex:1;">
+              <span id="fe-time-dur" style="font:600 10.5px var(--ff-mono);color:var(--text-dim);">00:00.00</span>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+              <button class="mini-btn" id="fe-btn-download" title="Download Filtered Audio WAV" style="font-size:10.5px;padding:4px 8px;">
+                ⬇ Export WAV
+              </button>
+              <span id="fe-processing-badge" style="font:10px var(--ff-mono);color:var(--ok);display:none;">
+                ● DSP Synced
+              </span>
+            </div>
+          </div>
+
+        </aside>
+
+        <!-- RIGHT PANEL: METRICS & INTERACTIVE FFT SPECTRUM -->
+        <div class="lab-display-area">
+
+          <!-- METRIC CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <span class="metric-label">FILTER CONFIGURATION</span>
+              <span class="metric-value" id="fe-metric-mode" style="font-size:15px;color:var(--trace-a);">Band-Pass</span>
+              <span class="metric-sub" id="fe-metric-order">8th Order Butterworth</span>
+            </div>
+
+            <div class="metric-card primary-card">
+              <span class="metric-label">ACTIVE PASSBAND</span>
+              <span class="metric-value" id="fe-metric-range">300 – 3000 Hz</span>
+              <span class="metric-sub" id="fe-metric-octaves">Span: 3.32 Octaves</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">BANDWIDTH & ROLL-OFF</span>
+              <span class="metric-value" id="fe-metric-bw" style="color:var(--ok);">2700 Hz</span>
+              <span class="metric-sub" id="fe-metric-slope">Slope: −48 dB / Octave</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">OUTPUT LEVEL</span>
+              <span class="metric-value" id="fe-metric-peak" style="font-size:15px;color:var(--accent-cyan);">−0.5 dBFS</span>
+              <span class="metric-sub" id="fe-metric-norm">Peak Normalized</span>
+            </div>
+          </div>
+
+          <!-- MAIN INTERACTIVE FFT SPECTRUM PANEL -->
+          <div class="panel scope-panel hero-scope" style="flex:2;min-height:300px;display:flex;flex-direction:column;">
+            <div class="panel-head" style="flex-wrap:wrap;gap:8px;">
+              <span class="panel-label" style="display:flex;align-items:center;gap:6px;">
+                <i class="swatch swatch-a"></i> INTERACTIVE FFT SPECTRUM & FREQUENCY HANDLES
+              </span>
+              
+              <!-- Legend Items -->
+              <div class="trace-legend" style="margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px;">
+                <span class="legend-item"><i class="swatch swatch-cyan"></i> Before (Input FFT)</span>
+                <span class="legend-item"><i class="swatch swatch-ok"></i> After (Filtered FFT)</span>
+                <span class="legend-item"><i class="swatch" style="background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,0.5);"></i> Butterworth H(f)</span>
+              </div>
+
+              <!-- View Switcher Tabs -->
+              <div class="header-nav-tabs" style="padding:2px;" id="fe-view-tabs">
+                <button class="nav-tab active" data-view="dual" id="fe-tab-view-dual" style="padding:3px 10px;font-size:10px;">Dual Overlay</button>
+                <button class="nav-tab" data-view="before" id="fe-tab-view-before" style="padding:3px 10px;font-size:10px;">Before Only</button>
+                <button class="nav-tab" data-view="after" id="fe-tab-view-after" style="padding:3px 10px;font-size:10px;">After Only</button>
+              </div>
+            </div>
+
+            <!-- SPECTRUM CONTAINER WITH DUAL DRAGGABLE HANDLES -->
+            <div class="fe-spectrum-container" id="fe-spectrum-wrap">
+              <canvas id="fe-canvas-spectrum" style="width:100%;height:100%;display:block;"></canvas>
+
+              <!-- Draggable Left Handle (Low Cutoff) -->
+              <div class="fe-drag-handle fe-handle-low" id="fe-handle-low" title="Drag to adjust Low Cutoff Frequency (f_low)">
+                <div class="fe-handle-badge" id="fe-badge-flow">300 Hz</div>
+                <div class="fe-handle-line"></div>
+                <div class="fe-handle-grip">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 6l-4 6 4 6M16 6l4 6-4 6"/></svg>
+                </div>
+              </div>
+
+              <!-- Draggable Right Handle (High Cutoff) -->
+              <div class="fe-drag-handle fe-handle-high" id="fe-handle-high" title="Drag to adjust High Cutoff Frequency (f_high)">
+                <div class="fe-handle-badge" id="fe-badge-fhigh">3000 Hz</div>
+                <div class="fe-handle-line"></div>
+                <div class="fe-handle-grip">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 6l-4 6 4 6M16 6l4 6-4 6"/></svg>
+                </div>
+              </div>
+
+              <!-- Frequency hover tooltip -->
+              <div class="fe-spectrum-tooltip" id="fe-spectrum-tooltip" style="display:none;"></div>
+            </div>
+            
+            <div class="spectrum-axis-footer" style="display:flex;justify-content:space-between;padding:4px 8px;font:10px var(--ff-mono);color:var(--text-dim);border-top:1px solid var(--hairline-soft);">
+              <span>20 Hz</span>
+              <span>100 Hz</span>
+              <span>500 Hz</span>
+              <span>1 kHz</span>
+              <span>2.5 kHz</span>
+              <span>5 kHz</span>
+              <span>10 kHz</span>
+              <span>20 kHz</span>
+            </div>
+          </div>
+
+          <!-- TIME-DOMAIN WAVEFORM STRIP (BEFORE VS AFTER) -->
+          <div class="panel scope-panel" style="flex:1;min-height:130px;">
+            <div class="panel-head">
+              <span class="panel-label"><i class="swatch swatch-ok"></i> TIME-DOMAIN WAVEFORM & PLAYHEAD</span>
+              <span class="panel-sub" id="fe-waveform-sub">Cyan: Original Signal · Green: 8th-Order Filtered Signal</span>
+            </div>
+            <div class="canvas-wrap scope-wrap" style="position:relative;">
+              <canvas id="fe-canvas-waveform"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- ============ STATUS BAR ============ -->
+  <footer class="status-bar">
+    <span id="labs-status-text">Signal Labs ready. Interactive DSP Sandbox.</span>
+    <span class="status-right" id="labs-status-meta">Experiments: Wave Interference · Sampling & Aliasing · Fourier Series · Convolution · Frequency Explorer</span>
+  </footer>
+
+</div>
+
+<script src="labs.js"></script>
+</body>
+</html>

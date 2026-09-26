@@ -30,6 +30,7 @@
     <div class="header-file" id="header-file">
       <span class="file-dot" id="file-dot"></span>
       <span id="header-filename">No signal loaded</span>
+      <button class="header-file-close" id="btn-unload-file" title="Cancel / Remove loaded audio" aria-label="Cancel / Remove loaded audio" hidden>×</button>
     </div>
 
     <div class="header-actions">
@@ -37,19 +38,29 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Open
       </button>
-      <button class="btn btn-ghost" id="btn-samples" title="Try a sample">Samples ▾
-        <div class="sample-menu" id="sample-menu">
-          <div class="sample-item" data-sample="test_sine_mono.wav">Mono sine tone</div>
-          <div class="sample-item" data-sample="test_sine_stereo.wav">Stereo sine tone</div>
-          <div class="sample-item" data-sample="test_dynamic.wav">Dynamic range demo</div>
-          <div class="sample-item" data-sample="test_noise.wav">Noise sample</div>
-          <div class="sample-item" data-sample="test_silence.wav">Silence + tone</div>
-        </div>
+      <div class="dropdown" id="dropdown-samples">
+        <button class="btn btn-ghost" id="btn-samples" title="Try a sample" type="button">Samples ▾
+          <div class="sample-menu" id="sample-menu">
+            <div class="sample-item" data-sample="test_sine_mono.wav">Mono sine tone</div>
+            <div class="sample-item" data-sample="test_sine_stereo.wav">Stereo sine tone</div>
+            <div class="sample-item" data-sample="test_dynamic.wav">Dynamic range demo</div>
+            <div class="sample-item" data-sample="test_noise.wav">Noise sample</div>
+            <div class="sample-item" data-sample="test_silence.wav">Silence + tone</div>
+          </div>
+        </button>
+      </div>
+      <button class="btn btn-ghost header-enhance-btn" id="header-enhance-btn" onclick="window.openEnhanceStudio && window.openEnhanceStudio()" title="Voice Enhancement Studio">
+        <span style="color:var(--trace-b);font-weight:700;">✨</span>
+        Enhance
       </button>
-      <button class="btn btn-ghost" id="btn-open-mixer" title="Concert Sound Mixer">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V10M4 6V3M12 21v-6M12 11V3M20 21v-4M20 13V3"/><circle cx="4" cy="8" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="20" cy="15" r="2"/></svg>
-        Mixer
-      </button>
+      <a href="labs.html" class="btn btn-ghost" id="btn-nav-labs" title="Signal Labs — Interactive Experiments" style="text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        Signal Labs
+      </a>
+      <a href="speed-pitch.html" class="btn btn-ghost" id="btn-nav-speed" title="Audio Speed, Pitch & Resampling Visualizer" style="text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Speed & Pitch
+      </a>
       <button class="btn btn-solid" id="btn-export" disabled title="Download processed WAV">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
@@ -62,6 +73,10 @@
 
     <!-- ============ LEFT RAIL: MODULE RACK ============ -->
     <nav class="rack" id="rack">
+      <div class="rack-enhance-card sidebar-enhance-item" id="sidebar-enhance-item" onclick="window.openEnhanceStudio && window.openEnhanceStudio()" title="Open Enhance Speech Studio">
+        <div class="rec-badge"><span class="rec-spark">✨</span> MASTERING</div>
+        <div class="rec-title">Enhance Audio</div>
+      </div>
       <div class="rack-empty" id="rack-empty">Load a signal to enable modules</div>
       <!-- module groups injected by JS -->
     </nav>
@@ -216,26 +231,181 @@
 
 </div>
 
-<!-- ============ CONCERT SOUND MIXER (self-contained, additive feature) ============ -->
-<div class="mixer-backdrop" id="mixer-backdrop" hidden>
-  <div class="mixer-modal panel">
-    <div class="mixer-modal-head">
-      <span class="panel-label">Concert Sound Mixer</span>
-      <span class="panel-sub">5 channels · 3-band EQ · Main / Monitor routing</span>
-      <button class="mini-btn" id="btn-close-mixer" title="Close" style="margin-left:auto;">✕</button>
+<!-- ============ ENHANCE AUDIO STUDIO ============ -->
+<div class="enhance-backdrop" id="enhance-modal" style="display:none;">
+  <div class="enhance-modal panel">
+    <div class="enhance-modal-head">
+      <div class="enhance-brand-title">
+        <span class="enhance-sparkle-icon">✨</span>
+        <div>
+          <div class="enh-title-text" style="display:flex;align-items:center;gap:8px;">
+            AUDIO ENHANCEMENT STUDIO
+            <span id="enh-engine-badge" style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,180,84,0.15);color:var(--trace-a);border:1px solid rgba(255,180,84,0.3);letter-spacing:0.05em;font-weight:700;">Studio DSP</span>
+          </div>
+          <div class="enh-subtitle">Intelligent Multiband Denoise, Dereverb, Voice EQ & BS.1770 Mastering</div>
+        </div>
+      </div>
+      <button class="mini-btn" id="btn-close-enhance" title="Close Studio" style="margin-left:auto;">✕</button>
     </div>
 
-    <div class="mixer-transport">
-      <button class="tp-btn" id="mx-play" title="Play / stop all channels">
-        <svg id="mx-icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
-        <svg id="mx-icon-stop" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="5" y="5" width="14" height="14"/></svg>
-      </button>
-      <span id="mx-transport-label" style="font:12px var(--ff-mono);color:var(--text-mid);">Stopped · loops the 5 built-in sample inputs</span>
+    <!-- PRESET SELECTOR BAR -->
+    <div class="enhance-preset-bar">
+      <span class="preset-label">TARGET PRESETS:</span>
+      <div class="preset-pills" id="preset-pills">
+        <button class="preset-pill active" data-preset="podcast">🎙️ Podcast</button>
+        <button class="preset-pill" data-preset="voice_clean">🧼 Voice Clean</button>
+        <button class="preset-pill" data-preset="video_dialogue">🎬 Video Dialogue</button>
+        <button class="preset-pill" data-preset="room_recording">🏠 Room Recording</button>
+        <button class="preset-pill" data-preset="lecture">🎓 Lecture</button>
+        <button class="preset-pill" data-preset="studio_voice">📻 Studio Voice</button>
+      </div>
     </div>
 
-    <div class="mixer-channels" id="mixer-channels"><!-- channel strips injected by mixer.js --></div>
+    <!-- MAIN BODY GRID -->
+    <div class="enhance-grid">
+      <!-- Left Column: Macro Sliders -->
+      <div class="enhance-controls-card">
+        <div class="card-section-label">MACRO MASTERING CONTROLS</div>
 
-    <div class="mixer-master" id="mixer-master"><!-- Main / Monitor bus strips injected by mixer.js --></div>
+        <div class="enh-slider-group">
+          <div class="enh-slider-header">
+            <span class="esh-label">Noise Reduction</span>
+            <span class="esh-val" id="val-noise-reduction">60%</span>
+          </div>
+          <input type="range" id="sl-noise-reduction" class="enh-range" min="0" max="100" value="60">
+          <div class="esh-hint">Adaptive Wiener suppression · protects speech formants &amp; consonants</div>
+        </div>
+
+        <div class="enh-slider-group">
+          <div class="enh-slider-header">
+            <span class="esh-label">Voice Clarity</span>
+            <span class="esh-val" id="val-voice-clarity">65%</span>
+          </div>
+          <input type="range" id="sl-voice-clarity" class="enh-range" min="0" max="100" value="65">
+          <div class="esh-hint">Mud cut (320 Hz) + high air sheen (10 kHz)</div>
+        </div>
+
+        <div class="enh-slider-group">
+          <div class="enh-slider-header">
+            <span class="esh-label">Room Reduction (De-Reverb)</span>
+            <span class="esh-val" id="val-room-reduction">45%</span>
+          </div>
+          <input type="range" id="sl-room-reduction" class="enh-range" min="0" max="100" value="45">
+          <div class="esh-hint">Late reverberation decay modeling + boxiness reduction</div>
+        </div>
+
+        <div class="enh-slider-group">
+          <div class="enh-slider-header">
+            <span class="esh-label">Voice Presence</span>
+            <span class="esh-val" id="val-voice-presence">60%</span>
+          </div>
+          <input type="range" id="sl-voice-presence" class="enh-range" min="0" max="100" value="60">
+          <div class="esh-hint">Intelligibility boost (3.2 kHz) + vocal body support (180 Hz)</div>
+        </div>
+
+        <div class="enh-slider-group">
+          <div class="enh-slider-header">
+            <span class="esh-label">Target Loudness</span>
+            <span class="esh-val" id="val-loudness">-16.0 LUFS</span>
+          </div>
+          <input type="range" id="sl-loudness" class="enh-range" min="-24" max="-10" step="0.5" value="-16.0">
+          <div class="esh-hint">Broadcast standard ITU-R BS.1770 normalization with true-peak limiter</div>
+        </div>
+
+        <div class="enh-btn-row">
+          <button class="btn btn-ghost" id="btn-enh-reset">Reset</button>
+          <button class="btn btn-solid enh-run-btn" id="btn-enh-process">
+            <span class="btn-sparkle">✨</span> Enhance Audio
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Column: Visualizer, Comparison, Real Metrics -->
+      <div class="enhance-stage-card">
+        <!-- Processing Animation Stepper (shown during enhancement) -->
+        <div class="enhance-stepper" id="enhance-stepper" hidden>
+          <div class="stepper-title"><span class="spinner"></span> Processing Enhancement Pipeline…</div>
+          <div class="stepper-stages" id="stepper-stages">
+            <!-- Injected stages -->
+          </div>
+        </div>
+
+        <!-- Empty State when not yet processed -->
+        <div class="enhance-deck-empty" id="enhance-deck-empty">
+          <div class="ede-icon">✨</div>
+          <div class="ede-title">Ready to Enhance Audio</div>
+          <div class="ede-desc">Configure macro sliders or select a preset, then click "Enhance Audio" to run the full mastering pipeline.</div>
+        </div>
+
+        <!-- Real Analysis Metrics KPI Cards (shown after processing) -->
+        <div class="enhance-metrics-deck" id="enhance-metrics-deck" hidden>
+          <div class="card-section-label">REAL AUDIO ANALYSIS &amp; MASTERING METRICS</div>
+          <div class="metrics-kpi-grid">
+            <div class="kpi-card highlight">
+              <div class="kpi-label">SNR IMPROVEMENT</div>
+              <div class="kpi-value" id="kpi-snr-diff">+14.5 dB</div>
+              <div class="kpi-sub" id="kpi-snr-detail">7.2 dB → 21.7 dB</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">NOISE FLOOR</div>
+              <div class="kpi-value" id="kpi-noise-floor">-58.2 dBFS</div>
+              <div class="kpi-sub" id="kpi-noise-detail">was -38.5 dBFS</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">LOUDNESS</div>
+              <div class="kpi-value" id="kpi-loudness">-16.0 LUFS</div>
+              <div class="kpi-sub" id="kpi-lufs-detail">ITU-R BS.1770</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">TRUE PEAK</div>
+              <div class="kpi-value" id="kpi-peak">-1.0 dBFS</div>
+              <div class="kpi-sub" id="kpi-peak-detail">0.0 overs protected</div>
+            </div>
+          </div>
+
+          <!-- BEFORE / AFTER INTERACTIVE COMPARISON WAVEFORM -->
+          <div class="card-section-label" style="margin-top:10px;">BEFORE / AFTER WAVEFORM &amp; SPECTRUM</div>
+          <div class="compare-canvas-wrap" id="compare-canvas-wrap">
+            <canvas id="enh-compare-canvas" height="130"></canvas>
+            <div class="compare-divider" id="compare-divider">
+              <div class="cd-line"></div>
+              <div class="cd-handle">◀ A | B ▶</div>
+            </div>
+            <div class="compare-badge left">ORIGINAL</div>
+            <div class="compare-badge right">ENHANCED</div>
+          </div>
+
+          <!-- DUAL TRANSPORT & SEAMLESS A/B SWITCH -->
+          <div class="compare-transport">
+            <button class="tp-btn" id="enh-tp-play" title="Play / Pause">
+              <svg id="enh-icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+              <svg id="enh-icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+            </button>
+            <span class="tp-time" id="enh-tp-time">00:00.000</span>
+            <input type="range" id="enh-tp-seek" class="tp-seek" min="0" max="1000" value="0">
+            <span class="tp-time tp-time-dim" id="enh-tp-duration">00:00.000</span>
+
+            <div class="enh-ab-toggle" id="enh-ab-toggle">
+              <button class="enh-ab-btn" data-mode="original" id="btn-ab-orig">Original</button>
+              <button class="enh-ab-btn active" data-mode="enhanced" id="btn-ab-enh">✨ Enhanced</button>
+            </div>
+          </div>
+
+          <!-- EXPORT & COMMIT BAR -->
+          <div class="enhance-commit-bar">
+            <button class="btn btn-ghost" id="btn-enh-download">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Enhanced WAV
+            </button>
+            <button class="btn btn-solid" id="btn-enh-commit" style="margin-left:auto;">
+              Apply to Main Signal ↵
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -243,6 +413,5 @@
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
-<script src="mixer.js"></script>
 </body>
 </html>

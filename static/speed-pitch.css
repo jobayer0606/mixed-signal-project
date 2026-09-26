@@ -1,0 +1,92 @@
+/* =====================================================================
+   SIGNAL LAB — Page 3: Audio Speed, Pitch & Resampling Visualizer CSS
+   Isolated Dark DSP Workstation Stylesheet
+   ===================================================================== */
+
+/* ── Page Layout & Body ───────────────────────────────────────────── */
+#sp-app {
+  display: flex; flex-direction: column; height: 100vh; width: 100vw;
+  background: var(--bg-void); color: var(--text-hi); overflow: hidden;
+}
+
+.sp-body {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  padding: 16px 20px; gap: 16px; overflow-y: auto;
+}
+
+.sp-grid {
+  display: grid; grid-template-columns: 320px 1fr; gap: 16px; flex: 1;
+}
+
+.sp-controls-panel {
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-void) 100%);
+  border: 1px solid var(--hairline-bright); border-radius: var(--radius-lg);
+  padding: 16px; display: flex; flex-direction: column; gap: 16px;
+  box-shadow: var(--shadow-panel);
+}
+
+.sp-display-area {
+  display: flex; flex-direction: column; gap: 14px; flex: 1;
+}
+
+/* ── Dual Spectrum Grid ────────────────────────────────────────────── */
+.sp-dual-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+/* ── Custom Swatches ──────────────────────────────────────────────── */
+.swatch-proc {
+  background: #9e7aff; box-shadow: 0 0 8px rgba(158,122,255,0.6);
+}
+
+/* ── Mode Toggle Segmented Control ────────────────────────────────── */
+.segmented-control {
+  display: flex;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--hairline-bright);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 4px;
+}
+
+.mode-toggle-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.mode-toggle-btn:hover {
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-toggle-btn.active {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-cyan);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+}
+
+.mode-toggle-btn.mode-smart.active {
+  background: rgba(158, 122, 255, 0.18);
+  color: #c084fc;
+  border-color: rgba(158, 122, 255, 0.45);
+  box-shadow: 0 0 10px rgba(158, 122, 255, 0.25);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sp-grid { grid-template-columns: 1fr; }
+  .sp-dual-grid { grid-template-columns: 1fr; }
+}

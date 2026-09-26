@@ -23,10 +23,11 @@
 const EQ_BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 const GROUPS = [
+  { id: "mastering",label: "Mastering Suite", keys: ["enhance"] },
   { id: "shape",    label: "Level & shape", keys: ["gain", "normalize", "fade_in", "fade_out", "invert", "trim_silence"] },
   { id: "dynamics", label: "Dynamics",       keys: ["hard_limit", "soft_clip", "compress", "distort"] },
   { id: "time",     label: "Time & pitch",   keys: ["reverse", "delay", "change_speed", "time_stretch", "reverb"] },
-  { id: "spectral", label: "Spectral",       keys: ["eq", "noise_reduction"] },
+  { id: "spectral", label: "Spectral",       keys: ["freq_filter", "eq", "noise_reduction"] },
 ];
 
 const EFFECTS = {
@@ -126,6 +127,16 @@ const EFFECTS = {
     explain: "Uses a phase vocoder to compress or expand the signal in time while keeping pitch constant — length changes, tone doesn't.",
     params: [{ key: "factor", type: "dial", min: 0.25, max: 4, step: 0.05, unit: "x", def: 1.25 }],
   },
+  freq_filter: {
+    label: "FFT Frequency Explorer", tier: "Spectral DSP", detail: "freq_filter",
+    explain: "Interactive FFT Frequency Range Explorer. Isolate specific frequency regions (Low-pass, High-pass, Band-pass) using steep SciPy Butterworth filters. Drag boundaries directly on the spectrum canvas or adjust dials.",
+    params: [
+      { key: "filter_type", type: "seg", options: ["bandpass", "lowpass", "highpass"], def: "bandpass" },
+      { key: "low_freq", type: "dial", min: 20, max: 20000, step: 10, unit: " Hz", def: 300 },
+      { key: "high_freq", type: "dial", min: 20, max: 20000, step: 10, unit: " Hz", def: 3400 },
+      { key: "order", type: "dial", min: 2, max: 8, step: 2, unit: "th", def: 6 },
+    ],
+  },
   eq: {
     label: "10-Band EQ", tier: "Stretch", detail: "eq",
     explain: "Ten peaking filters, one per band, each boosting or cutting a narrow range of frequencies around its center.",
@@ -149,9 +160,21 @@ const EFFECTS = {
       { key: "floor", type: "dial", min: 0, max: 0.02, step: 0.001, unit: "", def: 0.002 },
     ],
   },
+  enhance: {
+    label: "Enhance Speech", tier: "Studio AI/DSP", detail: "generic",
+    explain: "Voice mastering suite: VAD speech detection, adaptive Wiener noise suppression, room de-reverberation, voice EQ, soft-knee compression, and -16 LUFS broadcast normalization.",
+    params: [
+      { key: "noise_reduction", type: "dial", min: 0, max: 1, step: 0.05, unit: "", def: 0.7 },
+      { key: "voice_clarity", type: "dial", min: 0, max: 1, step: 0.05, unit: "", def: 0.5 },
+      { key: "room_reduction", type: "dial", min: 0, max: 1, step: 0.05, unit: "", def: 0.45 },
+      { key: "voice_presence", type: "dial", min: 0, max: 1, step: 0.05, unit: "", def: 0.5 },
+      { key: "loudness", type: "dial", min: -24, max: -10, step: 0.5, unit: "LUFS", def: -16 },
+    ],
+  },
 };
 
 const ICONS = {
+  enhance: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
   gain: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   normalize: '<path d="M4 18V6M9 18V9M14 18v-9M19 18V6"/>',
   fade_in: '<path d="M3 18 L21 6 M3 18 L21 18"/>',
@@ -166,6 +189,7 @@ const ICONS = {
   delay: '<path d="M3 12h5 M11 12h4 M18 12h3" /><circle cx="4.5" cy="12" r="1.5"/><circle cx="13" cy="12" r="1.5" opacity=".6"/><circle cx="19.5" cy="12" r="1.5" opacity=".3"/>',
   change_speed: '<path d="M3 17l6-10 6 10 6-10"/>',
   time_stretch: '<path d="M3 12h2m3 0h2m3 0h2m3 0h2m3 0h2" stroke-width="2.4"/>',
+  freq_filter: '<path d="M2 18h3l3-12 4 12 3-6 3 6h4"/><path d="M8 6v12M15 6v12" stroke-dasharray="2 2" opacity=".7"/>',
   eq: '<path d="M4 20V10M9 20V4M14 20v-8M19 20V8"/>',
   reverb: '<path d="M4 12c2-6 4-6 6 0s4 6 6 0 4-6 6 0" opacity=".9"/>',
   noise_reduction: '<path d="M3 14l3-8 3 12 3-16 3 10 3-6 3 8"/>',
@@ -658,7 +682,153 @@ function renderSpectrum() {
 
   if (state.activeEffect === "eq") {
     drawEqCurveOverlay(spectrumCtx, axisPad, plotW, plotH, sr);
+  } else if (state.activeEffect === "freq_filter") {
+    drawFreqFilterOverlay(spectrumCtx, axisPad, plotW, plotH, sr);
   }
+}
+
+function freqFilterResponseDb(f, type, lowFreq, highFreq, order = 6, gainDb = 0) {
+  const minHz = 10;
+  const fClamped = Math.max(minHz, f);
+  const n = Math.max(1, Math.min(10, Math.floor(order / 2) || 1));
+  let hSquared = 1.0;
+
+  if (type === "lowpass") {
+    const fc = Math.max(minHz, highFreq || 1000);
+    const ratio = fClamped / fc;
+    hSquared = 1.0 / (1.0 + Math.pow(ratio, 2 * n));
+  } else if (type === "highpass") {
+    const fc = Math.max(minHz, lowFreq || 500);
+    const ratio = fc / fClamped;
+    hSquared = 1.0 / (1.0 + Math.pow(ratio, 2 * n));
+  } else if (type === "bandstop" || type === "notch") {
+    const fl = Math.min(lowFreq, highFreq);
+    const fh = Math.max(lowFreq, highFreq);
+    const bw = Math.max(10, fh - fl);
+    const f0 = Math.sqrt(fl * fh);
+    const ratio = (fClamped * fClamped - f0 * f0) / (fClamped * bw);
+    hSquared = (ratio * ratio) / (1.0 + ratio * ratio);
+  } else {
+    // bandpass
+    const fl = Math.min(lowFreq, highFreq);
+    const fh = Math.max(lowFreq, highFreq);
+    const bw = Math.max(10, fh - fl);
+    const f0 = Math.sqrt(fl * fh);
+    const ratio = (fClamped * fClamped - f0 * f0) / (fClamped * bw);
+    hSquared = 1.0 / (1.0 + Math.pow(ratio, 2 * n));
+  }
+
+  const db = 10 * Math.log10(Math.max(hSquared, 1e-8)) + (gainDb || 0);
+  return Math.max(-90, Math.min(12, db));
+}
+
+function drawFreqFilterOverlay(ctx, axisPad, plotW, plotH, sr) {
+  const p = state.paramValues.freq_filter || {};
+  const filterType = p.filter_type || "bandpass";
+  const lowFreq = p.low_freq ?? 300;
+  const highFreq = p.high_freq ?? 3400;
+  const order = p.order ?? 6;
+  const gainDb = p.gain_db ?? 0;
+
+  const maxHz = Math.min(20000, sr / 2);
+  const logMin = Math.log10(20), logMax = Math.log10(maxHz);
+
+  const freqToX = (f) => {
+    const fClamped = Math.max(20, Math.min(maxHz, f));
+    const frac = (Math.log10(fClamped) - logMin) / (logMax - logMin);
+    return axisPad.l + frac * plotW;
+  };
+
+  const xLow = freqToX(lowFreq);
+  const xHigh = freqToX(highFreq);
+
+  ctx.save();
+
+  // 1. Draw shaded highlighted band region
+  let rStart = axisPad.l, rEnd = axisPad.l + plotW;
+  if (filterType === "bandpass") {
+    rStart = Math.min(xLow, xHigh);
+    rEnd = Math.max(xLow, xHigh);
+  } else if (filterType === "lowpass") {
+    rStart = axisPad.l;
+    rEnd = xHigh;
+  } else if (filterType === "highpass") {
+    rStart = xLow;
+    rEnd = axisPad.l + plotW;
+  }
+
+  const bandW = Math.max(2, rEnd - rStart);
+  const grad = ctx.createLinearGradient(rStart, 0, rEnd, 0);
+  grad.addColorStop(0, "rgba(95,227,163,0.12)");
+  grad.addColorStop(0.5, "rgba(95,227,163,0.22)");
+  grad.addColorStop(1, "rgba(95,227,163,0.12)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(rStart, axisPad.t, bandW, plotH);
+
+  // 2. Draw vertical draggable boundary lines & glow handles
+  function drawHandle(x, label, isLeft) {
+    if (x < axisPad.l || x > axisPad.l + plotW) return;
+    ctx.strokeStyle = "#5fe3a3";
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = "rgba(95,227,163,0.8)";
+    ctx.shadowBlur = 6;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, axisPad.t);
+    ctx.lineTo(x, axisPad.t + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+
+    // Handle grip button at top
+    ctx.fillStyle = "#5fe3a3";
+    ctx.beginPath();
+    ctx.arc(x, axisPad.t + 6, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Frequency badge
+    ctx.fillStyle = "rgba(10,14,20,0.88)";
+    ctx.strokeStyle = "rgba(95,227,163,0.6)";
+    ctx.lineWidth = 1;
+    const txt = label >= 1000 ? `${(label / 1000).toFixed(label % 1000 === 0 ? 0 : 1)}k` : `${Math.round(label)}Hz`;
+    ctx.font = "600 9px 'IBM Plex Mono', monospace";
+    const tw = ctx.measureText(txt).width + 6;
+    const bx = Math.min(Math.max(x - tw / 2, axisPad.l + 2), axisPad.l + plotW - tw - 2);
+    ctx.fillRect(bx, axisPad.t + 14, tw, 13);
+    ctx.strokeRect(bx, axisPad.t + 14, tw, 13);
+    ctx.fillStyle = "#5fe3a3";
+    ctx.fillText(txt, bx + 3, axisPad.t + 24);
+  }
+
+  if (filterType === "bandpass") {
+    drawHandle(xLow, lowFreq, true);
+    drawHandle(xHigh, highFreq, false);
+  } else if (filterType === "lowpass") {
+    drawHandle(xHigh, highFreq, false);
+  } else if (filterType === "highpass") {
+    drawHandle(xLow, lowFreq, true);
+  }
+
+  // 3. Draw exact filter transfer curve |H(f)|
+  ctx.beginPath();
+  const N = 180;
+  for (let i = 0; i <= N; i++) {
+    const frac = i / N;
+    const f = Math.pow(10, logMin + frac * (logMax - logMin));
+    const db = freqFilterResponseDb(f, filterType, lowFreq, highFreq, order, gainDb);
+    const x = axisPad.l + frac * plotW;
+    const dbClamped = Math.max(-90, Math.min(12, db));
+    const y = axisPad.t + (1 - (dbClamped + 90) / 90) * plotH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = "#5fe3a3";
+  ctx.lineWidth = 2.4;
+  ctx.shadowColor = "rgba(95,227,163,0.9)";
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
 }
 
 function biquadPeakingDb(f, sr, centerHz, gainDb, q) {
@@ -970,6 +1140,7 @@ function renderDetailPanel() {
   detailCtx.fillRect(0, 0, w, h);
 
   if (eff.detail === "eq") renderEqDetail(w, h, key);
+  else if (eff.detail === "freq_filter") renderFreqFilterDetail(w, h, key);
   else if (eff.detail === "compressor") renderCompressorDetail(w, h, key);
   else if (eff.detail === "distortion") renderDistortionDetail(w, h, key);
   else renderGenericDetail(w, h, key);
@@ -978,6 +1149,185 @@ function renderDetailPanel() {
 function axisLine(x0, y0, x1, y1, color = "rgba(255,255,255,.15)") {
   detailCtx.strokeStyle = color; detailCtx.lineWidth = 1;
   detailCtx.beginPath(); detailCtx.moveTo(x0, y0); detailCtx.lineTo(x1, y1); detailCtx.stroke();
+}
+
+function applyFreqPreset(preset) {
+  if (!state.paramValues.freq_filter) state.paramValues.freq_filter = defaultParams(EFFECTS.freq_filter);
+  const p = state.paramValues.freq_filter;
+  if (preset === "speech") {
+    p.filter_type = "bandpass";
+    p.low_freq = 300;
+    p.high_freq = 3400;
+    p.order = 6;
+  } else if (preset === "subbass") {
+    p.filter_type = "lowpass";
+    p.high_freq = 120;
+    p.order = 6;
+  } else if (preset === "midrange") {
+    p.filter_type = "bandpass";
+    p.low_freq = 500;
+    p.high_freq = 2500;
+    p.order = 6;
+  } else if (preset === "air") {
+    p.filter_type = "highpass";
+    p.low_freq = 6000;
+    p.order = 6;
+  } else if (preset === "basscut") {
+    p.filter_type = "highpass";
+    p.low_freq = 250;
+    p.order = 6;
+  } else if (preset === "telephone") {
+    p.filter_type = "bandpass";
+    p.low_freq = 400;
+    p.high_freq = 2800;
+    p.order = 8;
+  }
+  renderParamControls(EFFECTS.freq_filter, "freq_filter");
+  onParamChanged("freq_filter");
+  redrawAll();
+}
+
+async function listenToSelectedFrequencyRange() {
+  if (!state.fileId) return;
+  ac().resume().catch(() => {});
+  ensureAudioGraph();
+
+  if (!state.htmlAudio.paused && state.abMode === "processed") {
+    state.htmlAudio.pause();
+    renderFreqFilterDetail(fitDetailCanvas().w, 120, "freq_filter");
+    return;
+  }
+
+  // Ensure processed mode is selected
+  state.abMode = "processed";
+  updateAbSwitch();
+
+  if (!state.previewBuffer || !state.previewFileId) {
+    setStatus("Generating filtered frequency audio…");
+    toast("Isolating selected frequency band…", "info");
+    await runLivePreview();
+  }
+
+  updateTransportEnabled();
+  try {
+    await state.htmlAudio.play();
+    setStatus("Auditioning selected frequency range.");
+    toast("Listening to isolated frequency range", "success");
+    renderFreqFilterDetail(fitDetailCanvas().w, 120, "freq_filter");
+  } catch (err) {
+    console.error("Audition playback failed:", err);
+  }
+}
+
+function renderFreqFilterDetail(w, h, key) {
+  $("detail-head").textContent = "Filter transfer magnitude |H(f)| & Range Audition";
+  const p = state.paramValues[key] || {};
+  const filterType = p.filter_type || "bandpass";
+  const lowFreq = p.low_freq ?? 300;
+  const highFreq = p.high_freq ?? 3400;
+  const order = p.order ?? 6;
+  const gainDb = p.gain_db ?? 0;
+
+  const sr = state.sampleRate || 44100;
+  const maxHz = Math.min(20000, sr / 2);
+  const logMin = Math.log10(20), logMax = Math.log10(maxHz);
+  const pad = 8, dbMin = -60, dbMax = 6;
+
+  // Draw 0 dB axis
+  const y0 = 10 + (1 - (0 - dbMin) / (dbMax - dbMin)) * (h - 20);
+  axisLine(pad, y0, w - pad, y0, "rgba(255,255,255,.2)");
+
+  detailCtx.fillStyle = "rgba(146,160,177,.55)";
+  detailCtx.font = "8px 'IBM Plex Mono', monospace";
+  detailCtx.fillText("0 dB", pad + 2, y0 - 3);
+  detailCtx.fillText("-30 dB", pad + 2, y0 + (h - 20) * 0.45);
+
+  // Plot shaded passband area
+  const xLeft = pad + ((Math.log10(Math.max(20, filterType === "highpass" ? lowFreq : 20)) - logMin) / (logMax - logMin)) * (w - pad * 2);
+  const xRight = pad + ((Math.log10(Math.min(maxHz, filterType === "lowpass" ? highFreq : highFreq)) - logMin) / (logMax - logMin)) * (w - pad * 2);
+
+  detailCtx.save();
+  detailCtx.fillStyle = "rgba(95,227,163,0.08)";
+  if (filterType === "lowpass") {
+    detailCtx.fillRect(pad, 4, Math.max(0, xRight - pad), h - 8);
+  } else if (filterType === "highpass") {
+    detailCtx.fillRect(xLeft, 4, Math.max(0, w - pad - xLeft), h - 8);
+  } else {
+    detailCtx.fillRect(Math.min(xLeft, xRight), 4, Math.abs(xRight - xLeft), h - 8);
+  }
+  detailCtx.restore();
+
+  // Draw frequency curve
+  detailCtx.beginPath();
+  const N = 160;
+  for (let i = 0; i <= N; i++) {
+    const frac = i / N;
+    const f = Math.pow(10, logMin + frac * (logMax - logMin));
+    const db = freqFilterResponseDb(f, filterType, lowFreq, highFreq, order, gainDb);
+    const x = pad + frac * (w - pad * 2);
+    const yClamped = Math.max(dbMin, Math.min(dbMax, db));
+    const y = 10 + (1 - (yClamped - dbMin) / (dbMax - dbMin)) * (h - 20);
+    i === 0 ? detailCtx.moveTo(x, y) : detailCtx.lineTo(x, y);
+  }
+  detailCtx.strokeStyle = "#5fe3a3";
+  detailCtx.lineWidth = 2.2;
+  detailCtx.shadowColor = "rgba(95,227,163,.65)";
+  detailCtx.shadowBlur = 6;
+  detailCtx.stroke();
+  detailCtx.shadowBlur = 0;
+
+  // Format stats and Quick Preset Pills + Listen Button
+  let rangeDesc = "";
+  if (filterType === "lowpass") {
+    rangeDesc = `0 – ${highFreq >= 1000 ? (highFreq / 1000).toFixed(1) + "k" : Math.round(highFreq)} Hz`;
+  } else if (filterType === "highpass") {
+    rangeDesc = `${lowFreq >= 1000 ? (lowFreq / 1000).toFixed(1) + "k" : Math.round(lowFreq)} Hz – ${maxHz >= 1000 ? (maxHz/1000).toFixed(1) + "k" : maxHz} Hz`;
+  } else {
+    const octaves = (Math.log2(Math.max(1, highFreq / Math.max(1, lowFreq)))).toFixed(1);
+    rangeDesc = `${lowFreq >= 1000 ? (lowFreq / 1000).toFixed(1) + "k" : Math.round(lowFreq)} – ${highFreq >= 1000 ? (highFreq / 1000).toFixed(1) + "k" : Math.round(highFreq)} Hz (${octaves} oct)`;
+  }
+
+  const rollOff = order * 6; // dB/octave
+  const statsEl = $("detail-stats");
+  const isAuditioning = !state.htmlAudio.paused && state.abMode === "processed";
+
+  statsEl.innerHTML = `
+    <span>mode: <b>${filterType.toUpperCase()}</b></span>
+    <span>passband: <b>${rangeDesc}</b></span>
+    <span>slope: <b>${rollOff} dB/oct</b></span>
+    <div style="width:100%;display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+      <div style="font-size:10px;color:var(--text-dim);font-weight:600;letter-spacing:0.06em;">QUICK FREQUENCY PRESETS:</div>
+      <div class="freq-presets">
+        <button class="freq-preset-pill" data-preset="speech">🎙️ Speech</button>
+        <button class="freq-preset-pill" data-preset="subbass">🔊 Sub-Bass</button>
+        <button class="freq-preset-pill" data-preset="midrange">🎸 Midrange</button>
+        <button class="freq-preset-pill" data-preset="air">✨ Air/Sheen</button>
+        <button class="freq-preset-pill" data-preset="basscut">🧹 Bass Cut</button>
+        <button class="freq-preset-pill" data-preset="telephone">📻 Telephone</button>
+      </div>
+      <button class="btn-listen-range${isAuditioning ? " playing" : ""}" id="btn-listen-range" title="Audition this isolated frequency range in real time">
+        ${isAuditioning
+          ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>■ Stop Audition</span>'
+          : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg><span>🎧 Listen to Selected Range</span>'}
+      </button>
+    </div>
+  `;
+
+  // Wire presets
+  statsEl.querySelectorAll(".freq-preset-pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pr = btn.dataset.preset;
+      applyFreqPreset(pr);
+    });
+  });
+
+  // Wire listen button
+  const listenBtn = $("btn-listen-range");
+  if (listenBtn) {
+    listenBtn.addEventListener("click", () => {
+      listenToSelectedFrequencyRange();
+    });
+  }
 }
 
 function renderEqDetail(w, h, key) {
@@ -1167,6 +1517,7 @@ function setProcessing(on) {
 
 function buildRack() {
   const rack = $("rack");
+  if ($("rack-empty")) $("rack-empty").hidden = true;
   rack.querySelectorAll(".rack-group").forEach((n) => n.remove());
   GROUPS.forEach((group) => {
     const wrap = document.createElement("div");
@@ -1207,6 +1558,10 @@ function refreshRackState() {
  * --------------------------------------------------------------- */
 
 function selectEffect(key) {
+  if (key === "enhance") {
+    openEnhanceStudio();
+    return;
+  }
   if (!state.fileId) return;
   state.activeEffect = key;
   state.previewBuffer = null;
@@ -1491,6 +1846,7 @@ async function applyCurrentEffect() {
     setStatus("Ready.");
     closeParamPanel();
     redrawAll();
+    saveSessionToStorage();
   } catch (err) {
     setProcessing(false);
     toast(err.message, "error");
@@ -1516,11 +1872,104 @@ function closeParamPanel() {
   refreshRackState();
 }
 
+function saveSessionToStorage() {
+  if (state.fileId && state.currentBuffer) {
+    try {
+      localStorage.setItem(
+        "pyaudiolab_saved_session",
+        JSON.stringify({
+          fileId: state.fileId,
+          filename: state.filename || "audio.wav",
+          sampleRate: state.sampleRate,
+          duration: state.duration,
+          channels: state.channels,
+          appliedEffects: Array.from(state.appliedEffects || []),
+        })
+      );
+    } catch (e) {}
+  } else {
+    try {
+      localStorage.removeItem("pyaudiolab_saved_session");
+    } catch (e) {}
+  }
+}
+
+async function restoreSavedSession() {
+  try {
+    const raw = localStorage.getItem("pyaudiolab_saved_session");
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    if (!session || !session.fileId) return;
+
+    setStatus("Restoring previous session…");
+    const meta = await apiInfo(session.fileId);
+    const buffer = await decodeFileId(session.fileId);
+    meta.filename = session.filename || meta.filename || "audio.wav";
+    await loadFromUploadResponse(meta, buffer, false);
+    if (session.appliedEffects && Array.isArray(session.appliedEffects)) {
+      state.appliedEffects = new Set(session.appliedEffects);
+      refreshRackState();
+    }
+    setStatus("Session restored.");
+  } catch (err) {
+    try {
+      localStorage.removeItem("pyaudiolab_saved_session");
+    } catch (e) {}
+    setStatus("Ready.");
+  }
+}
+
+function unloadAudio() {
+  if (state.htmlAudio) {
+    state.htmlAudio.pause();
+    state.htmlAudio.removeAttribute("src");
+    state.htmlAudio.load();
+  }
+  stopPlayheadLoop();
+
+  state.fileId = null;
+  state.filename = "";
+  state.sampleRate = 44100;
+  state.duration = 0;
+  state.channels = 1;
+  state.currentBuffer = null;
+  state.previewBuffer = null;
+  state.previewFileId = null;
+  state.appliedEffects = new Set();
+  state.activeEffect = null;
+  state.selection = null;
+  state.selectionOnly = false;
+  state.abMode = "original";
+  state.view = { start: 0, end: 1 };
+  state.spectrogramCache = null;
+
+  saveSessionToStorage();
+
+  $("dropzone").hidden = false;
+  $("viz-stack").hidden = true;
+  $("transport").hidden = true;
+  $("btn-export").disabled = true;
+  $("file-dot").classList.remove("on");
+  $("header-filename").textContent = "No signal loaded";
+  const btnUnload = $("btn-unload-file");
+  if (btnUnload) btnUnload.hidden = true;
+
+  buildRack();
+  closeParamPanel();
+  updateAbSwitch();
+  updateSelectionUI();
+  updateHeaderMeta();
+  updateTransportEnabled();
+  redrawAll();
+  setStatus("Audio removed.");
+  toast("Audio file unloaded", "info");
+}
+
 /* --------------------------------------------------------------- *
  * 19. UPLOAD / LOAD FLOW                                            *
  * --------------------------------------------------------------- */
 
-async function loadFromUploadResponse(meta, buffer) {
+async function loadFromUploadResponse(meta, buffer, save = true) {
   state.fileId = meta.file_id;
   state.filename = meta.filename || "sample";
   state.sampleRate = meta.sample_rate;
@@ -1543,6 +1992,8 @@ async function loadFromUploadResponse(meta, buffer) {
   $("btn-export").disabled = false;
   $("file-dot").classList.add("on");
   $("header-filename").textContent = state.filename;
+  const btnUnload = $("btn-unload-file");
+  if (btnUnload) btnUnload.hidden = false;
 
   buildRack();
   closeParamPanel();
@@ -1551,6 +2002,7 @@ async function loadFromUploadResponse(meta, buffer) {
   updateHeaderMeta();
   updateTransportEnabled();
   redrawAll();
+  if (save) saveSessionToStorage();
   setStatus("Signal loaded.");
 }
 
@@ -1734,11 +2186,139 @@ function wireWaveformInteraction() {
     setZoom(span * factor, t);
   }, { passive: false });
 
-  waveCanvas.addEventListener("dblclick", () => {
+    waveCanvas.addEventListener("dblclick", () => {
     if (!state.currentBuffer) return;
     state.view = { start: 0, end: state.currentBuffer.duration };
     redrawAll();
   });
+}
+
+function wireSpectrumInteraction() {
+  let dragMode = null; // 'left' | 'right' | 'band' | 'create'
+  let dragStartX = 0, initialLow = 0, initialHigh = 0;
+
+  const getFreqFromX = (clientX) => {
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const axisPad = { l: 30, r: 2 };
+    const plotW = rect.width - axisPad.l - axisPad.r;
+    const x = clientX - rect.left - axisPad.l;
+    const frac = Math.max(0, Math.min(1, x / Math.max(1, plotW)));
+    const sr = state.sampleRate || 44100;
+    const maxHz = Math.min(20000, sr / 2);
+    const logMin = Math.log10(20), logMax = Math.log10(maxHz);
+    return Math.pow(10, logMin + frac * (logMax - logMin));
+  };
+
+  const getXFromFreq = (f) => {
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const axisPad = { l: 30, r: 2 };
+    const plotW = rect.width - axisPad.l - axisPad.r;
+    const sr = state.sampleRate || 44100;
+    const maxHz = Math.min(20000, sr / 2);
+    const logMin = Math.log10(20), logMax = Math.log10(maxHz);
+    const fClamped = Math.max(20, Math.min(maxHz, f));
+    const frac = (Math.log10(fClamped) - logMin) / (logMax - logMin);
+    return axisPad.l + frac * plotW;
+  };
+
+  spectrumCanvas.addEventListener("pointerdown", (e) => {
+    if (!state.fileId) return;
+    if (state.activeEffect !== "freq_filter") {
+      selectEffect("freq_filter");
+    }
+
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const p = state.paramValues.freq_filter;
+    const fType = p.filter_type || "bandpass";
+    const xLow = getXFromFreq(p.low_freq || 300);
+    const xHigh = getXFromFreq(p.high_freq || 3400);
+
+    dragStartX = x;
+    initialLow = p.low_freq || 300;
+    initialHigh = p.high_freq || 3400;
+
+    const hitDist = 12;
+    if (fType === "lowpass") {
+      dragMode = "right";
+    } else if (fType === "highpass") {
+      dragMode = "left";
+    } else {
+      // bandpass
+      if (Math.abs(x - xLow) < hitDist) dragMode = "left";
+      else if (Math.abs(x - xHigh) < hitDist) dragMode = "right";
+      else if (x > Math.min(xLow, xHigh) && x < Math.max(xLow, xHigh)) dragMode = "band";
+      else dragMode = "create";
+    }
+
+    spectrumCanvas.setPointerCapture(e.pointerId);
+  });
+
+  spectrumCanvas.addEventListener("pointermove", (e) => {
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+
+    if (!dragMode) {
+      if (state.activeEffect === "freq_filter" && state.paramValues.freq_filter) {
+        const p = state.paramValues.freq_filter;
+        const xLow = getXFromFreq(p.low_freq || 300);
+        const xHigh = getXFromFreq(p.high_freq || 3400);
+        const hitDist = 10;
+        if (Math.abs(x - xLow) < hitDist || Math.abs(x - xHigh) < hitDist) {
+          spectrumCanvas.style.cursor = "col-resize";
+        } else if (x > Math.min(xLow, xHigh) && x < Math.max(xLow, xHigh)) {
+          spectrumCanvas.style.cursor = "grab";
+        } else {
+          spectrumCanvas.style.cursor = "crosshair";
+        }
+      }
+      return;
+    }
+
+    const currentFreq = Math.round(getFreqFromX(e.clientX));
+    const p = state.paramValues.freq_filter;
+    const fType = p.filter_type || "bandpass";
+
+    if (dragMode === "left") {
+      p.low_freq = Math.max(20, Math.min(19000, currentFreq));
+      if (fType === "bandpass" && p.low_freq >= p.high_freq - 20) {
+        p.low_freq = Math.max(20, p.high_freq - 20);
+      }
+    } else if (dragMode === "right") {
+      p.high_freq = Math.max(40, Math.min(20000, currentFreq));
+      if (fType === "bandpass" && p.high_freq <= p.low_freq + 20) {
+        p.high_freq = Math.min(20000, p.low_freq + 20);
+      }
+    } else if (dragMode === "band") {
+      const startFreq = getFreqFromX(rect.left + dragStartX);
+      const ratio = currentFreq / Math.max(1, startFreq);
+      const spanRatio = initialHigh / Math.max(1, initialLow);
+      let newLow = Math.max(20, Math.min(18000, initialLow * ratio));
+      let newHigh = Math.max(newLow + 20, Math.min(20000, newLow * spanRatio));
+      p.low_freq = Math.round(newLow);
+      p.high_freq = Math.round(newHigh);
+    } else if (dragMode === "create") {
+      const startFreq = Math.round(getFreqFromX(rect.left + dragStartX));
+      p.low_freq = Math.max(20, Math.min(startFreq, currentFreq));
+      p.high_freq = Math.max(p.low_freq + 20, Math.max(startFreq, currentFreq));
+    }
+
+    renderParamControls(EFFECTS.freq_filter, "freq_filter");
+    onParamChanged("freq_filter");
+    redrawAll();
+  });
+
+  const endDrag = (e) => {
+    if (!dragMode) return;
+    dragMode = null;
+    try { spectrumCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    if ($("live-preview-toggle").checked && state.activeEffect === "freq_filter") {
+      scheduleLivePreview();
+    }
+  };
+
+  spectrumCanvas.addEventListener("pointerup", endDrag);
+  spectrumCanvas.addEventListener("pointercancel", endDrag);
 }
 
 /* --------------------------------------------------------------- *
@@ -1829,7 +2409,13 @@ function wire() {
     if (state.activeEffect && $("live-preview-toggle").checked) scheduleLivePreview();
   });
 
+  const btnUnload = $("btn-unload-file");
+  if (btnUnload) btnUnload.addEventListener("click", unloadAudio);
+
   wireWaveformInteraction();
+  wireSpectrumInteraction();
+  wireEnhanceStudio();
+  restoreSavedSession();
 
   window.addEventListener("resize", () => {
     if (!state.currentBuffer) return;
@@ -1837,6 +2423,578 @@ function wire() {
   });
 }
 
-wire();
-setStatus("Ready.");
+/* =====================================================================
+ * 23. ENHANCE SPEECH STUDIO CONTROLLER & BEFORE/AFTER ENGINE
+ * ===================================================================== */
+
+const enhanceState = {
+  activePreset: "podcast",
+  enhancedBuffer: null,
+  enhancedFileId: null,
+  originalBuffer: null,
+  originalFileId: null,
+  dividerFrac: 0.5,
+  isProcessing: false,
+  metrics: null,
+  audioElement: new Audio(),
+  abMode: "enhanced", // 'original' | 'enhanced'
+  rafId: null,
+};
+
+const ENH_PRESET_MAP = {
+  podcast:        { nr: 60, clarity: 65, room: 45, presence: 60, lufs: -16.0 },
+  voice_clean:    { nr: 75, clarity: 45, room: 40, presence: 40, lufs: -16.0 },
+  video_dialogue: { nr: 55, clarity: 70, room: 35, presence: 55, lufs: -15.0 },
+  room_recording: { nr: 70, clarity: 50, room: 85, presence: 45, lufs: -16.0 },
+  lecture:        { nr: 85, clarity: 60, room: 65, presence: 70, lufs: -16.0 },
+  studio_voice:   { nr: 35, clarity: 60, room: 25, presence: 70, lufs: -16.0 },
+};
+
+const ENH_STAGES = [
+  "Analyzing audio...",
+  "Detecting speech & voice activity...",
+  "Estimating dynamic noise profile...",
+  "Removing background noise (adaptive Wiener)...",
+  "Reducing room reverberation & boxiness...",
+  "Enhancing voice presence & clarity...",
+  "Normalizing loudness (ITU-R BS.1770)...",
+  "Done ✓",
+];
+
+let enhanceStudioWired = false;
+
+function wireEnhanceStudio() {
+  if (enhanceStudioWired) return;
+
+  const modal = $("enhance-modal") || $("enhance-backdrop");
+  if (!modal) return;
+  enhanceStudioWired = true;
+
+  const headerBtn = $("header-enhance-btn") || $("btn-open-enhance") || document.querySelector(".header-enhance-btn");
+  const sidebarItem = $("sidebar-enhance-item") || $("rack-enhance-card") || document.querySelector(".sidebar-enhance-item");
+  const closeBtn = $("btn-close-enhance") || document.querySelector(".close-enhance-btn");
+
+  if (headerBtn) headerBtn.addEventListener("click", openEnhanceStudio);
+  if (sidebarItem) sidebarItem.addEventListener("click", openEnhanceStudio);
+  if (closeBtn) closeBtn.addEventListener("click", closeEnhanceStudio);
+
+  document.querySelectorAll(".header-enhance-btn").forEach((el) => {
+    if (el !== headerBtn) el.addEventListener("click", openEnhanceStudio);
+  });
+  document.querySelectorAll(".sidebar-enhance-item").forEach((el) => {
+    if (el !== sidebarItem) el.addEventListener("click", openEnhanceStudio);
+  });
+  document.querySelectorAll(".close-enhance-btn").forEach((el) => {
+    if (el !== closeBtn) el.addEventListener("click", closeEnhanceStudio);
+  });
+
+  // Close when clicking backdrop overlay outside dialog
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeEnhanceStudio();
+  });
+
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal.style.display !== "none") {
+      closeEnhanceStudio();
+    }
+  });
+
+  // Slider events: live text update on input and change
+  const sliders = [
+    { id: "sl-noise-reduction", valId: "val-noise-reduction", unit: "%" },
+    { id: "sl-voice-clarity", valId: "val-voice-clarity", unit: "%" },
+    { id: "sl-room-reduction", valId: "val-room-reduction", unit: "%" },
+    { id: "sl-voice-presence", valId: "val-voice-presence", unit: "%" },
+    { id: "sl-loudness", valId: "val-loudness", unit: " LUFS", isFloat: true },
+  ];
+
+  sliders.forEach(({ id, valId, unit, isFloat }) => {
+    const sl = $(id);
+    const valEl = $(valId);
+    if (!sl || !valEl) return;
+    const updateVal = () => {
+      valEl.textContent = (isFloat ? parseFloat(sl.value).toFixed(1) : sl.value) + unit;
+    };
+    sl.addEventListener("input", updateVal);
+    sl.addEventListener("change", updateVal);
+  });
+
+  // Preset buttons
+  document.querySelectorAll(".preset-pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.dataset.preset;
+      applyPresetToSliders(preset);
+      document.querySelectorAll(".preset-pill").forEach((b) => b.classList.toggle("active", b === btn));
+      enhanceState.activePreset = preset;
+    });
+  });
+
+  // Reset button
+  const resetBtn = $("btn-enh-reset");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      applyPresetToSliders(enhanceState.activePreset || "podcast");
+    });
+  }
+
+  // Process button
+  const processBtn = $("btn-enh-process");
+  if (processBtn) processBtn.addEventListener("click", runEnhancement);
+
+  // Comparison Waveform Slider Dragging
+  wireComparisonDivider();
+
+  // Comparison Transport
+  const enhPlayBtn = $("enh-tp-play");
+  if (enhPlayBtn) enhPlayBtn.addEventListener("click", toggleEnhancePlayback);
+
+  const enhSeek = $("enh-tp-seek");
+  if (enhSeek) {
+    enhSeek.addEventListener("input", (e) => {
+      const dur = enhanceState.audioElement.duration;
+      if (dur) enhanceState.audioElement.currentTime = (e.target.value / 1000) * dur;
+    });
+  }
+
+  // A/B Toggle Buttons
+  const btnAbOrig = $("btn-ab-orig");
+  const btnAbEnh = $("btn-ab-enh");
+  if (btnAbOrig) btnAbOrig.addEventListener("click", () => switchEnhanceAbMode("original"));
+  if (btnAbEnh) btnAbEnh.addEventListener("click", () => switchEnhanceAbMode("enhanced"));
+
+  // Download Enhanced WAV
+  const dlBtn = $("btn-enh-download");
+  if (dlBtn) {
+    dlBtn.addEventListener("click", () => {
+      if (!enhanceState.enhancedFileId) return;
+      const a = document.createElement("a");
+      a.href = downloadUrl(enhanceState.enhancedFileId);
+      a.download = `enhanced_${state.filename || "audio"}.wav`;
+      a.click();
+    });
+  }
+
+  // Apply to Main Signal
+  const commitBtn = $("btn-enh-commit");
+  if (commitBtn) {
+    commitBtn.addEventListener("click", () => {
+      if (!enhanceState.enhancedFileId || !enhanceState.enhancedBuffer) return;
+      enhanceState.audioElement.pause();
+      state.fileId = enhanceState.enhancedFileId;
+      state.currentBuffer = enhanceState.enhancedBuffer;
+      state.previewBuffer = null;
+      state.previewFileId = null;
+      state.duration = enhanceState.enhancedBuffer.duration;
+      state.appliedEffects.add("enhance");
+      state.abMode = "original";
+      state.spectrogramCache = null;
+      state.view = { start: 0, end: enhanceState.enhancedBuffer.duration };
+
+      updateHeaderMeta();
+      updateAbSwitch();
+      refreshRackState();
+      updateTransportEnabled();
+      closeEnhanceStudio();
+      redrawAll();
+      saveSessionToStorage();
+      toast("✨ Enhanced audio applied to workspace", "success");
+    });
+  }
+
+  // Audio element events
+  enhanceState.audioElement.addEventListener("play", () => {
+    const playIcon = $("enh-icon-play");
+    const pauseIcon = $("enh-icon-pause");
+    if (playIcon) playIcon.hidden = true;
+    if (pauseIcon) pauseIcon.hidden = false;
+    startEnhancePlayheadLoop();
+  });
+  enhanceState.audioElement.addEventListener("pause", () => {
+    const playIcon = $("enh-icon-play");
+    const pauseIcon = $("enh-icon-pause");
+    if (playIcon) playIcon.hidden = false;
+    if (pauseIcon) pauseIcon.hidden = true;
+    renderComparisonCanvas();
+  });
+  enhanceState.audioElement.addEventListener("ended", () => {
+    const playIcon = $("enh-icon-play");
+    const pauseIcon = $("enh-icon-pause");
+    if (playIcon) playIcon.hidden = false;
+    if (pauseIcon) pauseIcon.hidden = true;
+    renderComparisonCanvas();
+  });
+  enhanceState.audioElement.addEventListener("timeupdate", () => {
+    const cur = enhanceState.audioElement.currentTime;
+    const dur = enhanceState.audioElement.duration || 1;
+    const tpTime = $("enh-tp-time");
+    const tpSeek = $("enh-tp-seek");
+    if (tpTime) tpTime.textContent = fmtTime(cur);
+    if (tpSeek) tpSeek.value = Math.round((cur / dur) * 1000);
+  });
+}
+
+function openEnhanceStudio() {
+  const modal = $("enhance-modal") || $("enhance-backdrop");
+  if (modal) {
+    modal.style.display = "flex";
+  }
+  if (!state.fileId) {
+    const deckEmpty = $("enhance-deck-empty");
+    const metricsDeck = $("enhance-metrics-deck");
+    const stepper = $("enhance-stepper");
+    if (deckEmpty) deckEmpty.hidden = false;
+    if (metricsDeck) metricsDeck.hidden = true;
+    if (stepper) stepper.hidden = true;
+  }
+  if (enhanceState.enhancedBuffer) {
+    renderComparisonCanvas();
+  }
+}
+
+function closeEnhanceStudio() {
+  enhanceState.audioElement.pause();
+  const modal = $("enhance-modal") || $("enhance-backdrop");
+  if (modal) {
+    modal.style.display = "none";
+  }
+}
+
+window.openEnhanceStudio = openEnhanceStudio;
+window.closeEnhanceStudio = closeEnhanceStudio;
+
+function applyPresetToSliders(presetKey) {
+  const p = ENH_PRESET_MAP[presetKey];
+  if (!p) return;
+  const updateSlider = (id, valId, val, unit, isFloat) => {
+    const sl = $(id);
+    const valEl = $(valId);
+    if (sl) sl.value = val;
+    if (valEl) valEl.textContent = (isFloat ? parseFloat(val).toFixed(1) : val) + unit;
+  };
+
+  updateSlider("sl-noise-reduction", "val-noise-reduction", p.nr, "%");
+  updateSlider("sl-voice-clarity", "val-voice-clarity", p.clarity, "%");
+  updateSlider("sl-room-reduction", "val-room-reduction", p.room, "%");
+  updateSlider("sl-voice-presence", "val-voice-presence", p.presence, "%");
+  updateSlider("sl-loudness", "val-loudness", p.lufs, " LUFS", true);
+}
+
+async function runEnhancement() {
+  if (!state.fileId) {
+    toast("Load an audio file first", "error");
+    return;
+  }
+
+  const runBtn = $("btn-enh-process");
+  runBtn.disabled = true;
+  enhanceState.isProcessing = true;
+
+  // Show stepper, hide empty state and metrics
+  $("enhance-deck-empty").hidden = true;
+  $("enhance-metrics-deck").hidden = true;
+  $("enhance-stepper").hidden = false;
+
+  const stagesWrap = $("stepper-stages");
+  stagesWrap.innerHTML = "";
+  ENH_STAGES.forEach((stage, idx) => {
+    const item = document.createElement("div");
+    item.className = "stepper-stage-item" + (idx === 0 ? " active" : "");
+    item.id = `stage-step-${idx}`;
+    item.innerHTML = `<span class="stepper-stage-icon">${idx === 0 ? "●" : "○"}</span><span>${stage}</span>`;
+    stagesWrap.appendChild(item);
+  });
+
+  // Simulated progressive animation while request is in flight
+  let currentStep = 0;
+  const timer = setInterval(() => {
+    if (currentStep < ENH_STAGES.length - 2) {
+      const prev = $(`stage-step-${currentStep}`);
+      if (prev) {
+        prev.classList.remove("active");
+        prev.classList.add("done");
+        prev.querySelector(".stepper-stage-icon").textContent = "✓";
+      }
+      currentStep++;
+      const next = $(`stage-step-${currentStep}`);
+      if (next) {
+        next.classList.add("active");
+        next.querySelector(".stepper-stage-icon").textContent = "●";
+      }
+    }
+  }, 280);
+
+  const nrEl = $("sl-noise-reduction");
+  const vcEl = $("sl-voice-clarity");
+  const rrEl = $("sl-room-reduction");
+  const vpEl = $("sl-voice-presence");
+  const ldEl = $("sl-loudness");
+  const nmEl = $("enh-neural-mode");
+
+  const payload = {
+    file_id: state.fileId,
+    noise_reduction: nrEl ? parseFloat(nrEl.value) / 100.0 : 0.60,
+    voice_clarity: vcEl ? parseFloat(vcEl.value) / 100.0 : 0.65,
+    room_reduction: rrEl ? parseFloat(rrEl.value) / 100.0 : 0.45,
+    voice_presence: vpEl ? parseFloat(vpEl.value) / 100.0 : 0.60,
+    loudness: ldEl ? parseFloat(ldEl.value) : -16.0,
+    neural_mode: nmEl ? nmEl.checked : false,
+    preset: enhanceState.activePreset || "podcast",
+  };
+
+  try {
+    const res = await fetch(`${API}/effects/enhance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Enhancement failed");
+
+    clearInterval(timer);
+
+    // Fast-forward all steps to Done
+    for (let i = 0; i < ENH_STAGES.length; i++) {
+      const step = $(`stage-step-${i}`);
+      if (step) {
+        step.classList.remove("active");
+        step.classList.add("done");
+        step.querySelector(".stepper-stage-icon").textContent = "✓";
+      }
+    }
+
+    // Engine badge update
+    if (data.neural_engine) {
+      const badge = $("enh-engine-badge");
+      if (badge) badge.textContent = data.neural_engine.available ? data.neural_engine.engine : "Studio DSP";
+    }
+
+    // Decode enhanced audio
+    const enhBuffer = await decodeFileId(data.enhanced_file_id);
+    enhanceState.enhancedBuffer = enhBuffer;
+    enhanceState.enhancedFileId = data.enhanced_file_id;
+    enhanceState.originalBuffer = state.currentBuffer;
+    enhanceState.originalFileId = state.fileId;
+    enhanceState.metrics = data;
+
+    // Small delay to let user see "Done ✓" before showing metrics deck
+    setTimeout(() => {
+      const stepper = $("enhance-stepper");
+      if (stepper) stepper.hidden = true;
+      const metricsDeck = $("enhance-metrics-deck");
+      if (metricsDeck) metricsDeck.hidden = false;
+
+      // Populate metrics
+      const inM = data.input_metrics;
+      const outM = data.output_metrics;
+      if (inM && outM) {
+        const snrDiff = (outM.snr_db - inM.snr_db);
+        const kpiSnr = $("kpi-snr-diff");
+        if (kpiSnr) kpiSnr.textContent = `+${Math.max(0, snrDiff).toFixed(1)} dB`;
+        const kpiSnrDet = $("kpi-snr-detail");
+        if (kpiSnrDet) kpiSnrDet.textContent = `${inM.snr_db.toFixed(1)} dB → ${outM.snr_db.toFixed(1)} dB`;
+
+        const kpiNoise = $("kpi-noise-floor");
+        if (kpiNoise) kpiNoise.textContent = `${outM.noise_floor_dbfs.toFixed(1)} dBFS`;
+        const kpiNoiseDet = $("kpi-noise-detail");
+        if (kpiNoiseDet) kpiNoiseDet.textContent = `was ${inM.noise_floor_dbfs.toFixed(1)} dBFS`;
+
+        const kpiLoudness = $("kpi-loudness");
+        if (kpiLoudness) kpiLoudness.textContent = `${outM.lufs.toFixed(1)} LUFS`;
+        const kpiLufsDet = $("kpi-lufs-detail");
+        if (kpiLufsDet) kpiLufsDet.textContent = `target ${data.parameters?.loudness?.toFixed(1) || "-16.0"} LUFS`;
+
+        const kpiPeak = $("kpi-peak");
+        if (kpiPeak) kpiPeak.textContent = `${outM.peak_dbfs.toFixed(1)} dBFS`;
+        const kpiPeakDet = $("kpi-peak-detail");
+        if (kpiPeakDet) kpiPeakDet.textContent = "true peak limited";
+      }
+
+      const tpDur = $("enh-tp-duration");
+      if (tpDur && enhBuffer) tpDur.textContent = fmtTime(enhBuffer.duration);
+
+      // Setup audio element for playback
+      switchEnhanceAbMode("enhanced");
+      renderComparisonCanvas();
+      runBtn.disabled = false;
+      enhanceState.isProcessing = false;
+      toast("Speech successfully enhanced!", "success");
+    }, 450);
+
+  } catch (err) {
+    clearInterval(timer);
+    runBtn.disabled = false;
+    enhanceState.isProcessing = false;
+    $("enhance-stepper").hidden = true;
+    $("enhance-deck-empty").hidden = false;
+    toast(err.message, "error");
+  }
+}
+
+function switchEnhanceAbMode(mode) {
+  enhanceState.abMode = mode;
+  $("btn-ab-orig").classList.toggle("active", mode === "original");
+  $("btn-ab-enh").classList.toggle("active", mode === "enhanced");
+
+  const targetFileId = mode === "enhanced" ? enhanceState.enhancedFileId : enhanceState.originalFileId;
+  if (!targetFileId) return;
+
+  const wasPlaying = !enhanceState.audioElement.paused;
+  const newSrc = downloadUrl(targetFileId);
+  const curTime = enhanceState.audioElement.currentTime;
+
+  if (!enhanceState.audioElement.src.endsWith(newSrc)) {
+    enhanceState.audioElement.src = newSrc;
+    enhanceState.audioElement.currentTime = curTime || 0;
+  }
+  if (wasPlaying) enhanceState.audioElement.play().catch(() => {});
+  renderComparisonCanvas();
+}
+
+function toggleEnhancePlayback() {
+  ac().resume().catch(() => {});
+  if (!enhanceState.audioElement.src && enhanceState.enhancedFileId) {
+    enhanceState.audioElement.src = downloadUrl(
+      enhanceState.abMode === "enhanced" ? enhanceState.enhancedFileId : enhanceState.originalFileId
+    );
+  }
+  if (enhanceState.audioElement.paused) {
+    enhanceState.audioElement.play().catch(() => {});
+  } else {
+    enhanceState.audioElement.pause();
+  }
+}
+
+function startEnhancePlayheadLoop() {
+  if (enhanceState.rafId) cancelAnimationFrame(enhanceState.rafId);
+  function loop() {
+    if (!enhanceState.audioElement.paused) {
+      renderComparisonCanvas();
+      enhanceState.rafId = requestAnimationFrame(loop);
+    }
+  }
+  enhanceState.rafId = requestAnimationFrame(loop);
+}
+
+function wireComparisonDivider() {
+  const wrap = $("compare-canvas-wrap");
+  const divider = $("compare-divider");
+  if (!wrap || !divider) return;
+
+  let dragging = false;
+
+  function updateFromX(clientX) {
+    const rect = wrap.getBoundingClientRect();
+    const x = clientX - rect.left;
+    let frac = x / rect.width;
+    frac = Math.max(0.04, Math.min(0.96, frac));
+    enhanceState.dividerFrac = frac;
+    divider.style.left = (frac * 100) + "%";
+    renderComparisonCanvas();
+  }
+
+  wrap.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    wrap.setPointerCapture(e.pointerId);
+    updateFromX(e.clientX);
+  });
+  wrap.addEventListener("pointermove", (e) => {
+    if (dragging) updateFromX(e.clientX);
+  });
+  wrap.addEventListener("pointerup", (e) => {
+    dragging = false;
+    try { wrap.releasePointerCapture(e.pointerId); } catch (_) {}
+  });
+}
+
+function renderComparisonCanvas() {
+  const canvas = $("enh-compare-canvas");
+  if (!canvas || !enhanceState.enhancedBuffer) return;
+  const { w, h } = fitCanvas(canvas);
+  const ctx = canvas.getContext("2d");
+
+  const origBuf = enhanceState.originalBuffer;
+  const enhBuf = enhanceState.enhancedBuffer;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background grid
+  ctx.strokeStyle = "rgba(255,255,255,.05)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  const splitX = Math.round(w * enhanceState.dividerFrac);
+
+  // Helper to draw waveform slice
+  function drawBuffer(buf, color, strokeStyle, minX, maxX) {
+    if (!buf) return;
+    const samples = monoOf(buf);
+    const n = samples.length;
+    if (n === 0) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(minX, 0, maxX - minX, h);
+    ctx.clip();
+
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+
+    const step = Math.max(1, Math.floor(n / w));
+    const cy = h / 2;
+    const amp = cy * 0.88;
+
+    for (let x = minX; x <= maxX; x++) {
+      const idx = Math.min(n - 1, Math.floor((x / w) * n));
+      let min = 1.0, max = -1.0;
+      const endIdx = Math.min(n, idx + step);
+      for (let j = idx; j < endIdx; j++) {
+        const v = samples[j];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      ctx.moveTo(x, cy - max * amp);
+      ctx.lineTo(x, cy - min * amp);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // 1. Draw Original Waveform on left of split divider (Amber/Gold)
+  drawBuffer(origBuf, "#FFB800", "#FFB800", 0, splitX);
+
+  // 2. Draw Enhanced Waveform on right of split divider (Purple/Violet)
+  drawBuffer(enhBuf, "#9D4EDD", "#9D4EDD", splitX, w);
+
+  // 3. Draw Playhead line if audio is loaded
+  const dur = enhanceState.audioElement.duration;
+  if (dur && dur > 0) {
+    const playX = (enhanceState.audioElement.currentTime / dur) * w;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(playX, 0);
+    ctx.lineTo(playX, h);
+    ctx.stroke();
+  }
+}
+
+// Wire when DOM is ready
+document.addEventListener("DOMContentLoaded", wireEnhanceStudio);
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    wire();
+    setStatus("Ready.");
+  });
+} else {
+  wire();
+  setStatus("Ready.");
+}
 })();
+

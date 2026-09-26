@@ -79,3 +79,27 @@ def test_upload_and_process_effect(tmp_path):
     assert stft_post.status_code == 200
     assert stft_post.json()["rows"] == 20
 
+    # Test Frequency Range Explorer Effect
+    freq_res = client.post(
+        "/api/effects/freq_filter",
+        json={
+            "file_id": file_id,
+            "params": {
+                "filter_type": "bandpass",
+                "low_freq": 300.0,
+                "high_freq": 3400.0,
+                "order": 6,
+            },
+        },
+    )
+    assert freq_res.status_code == 200
+    freq_data = freq_res.json()
+    assert "file_id" in freq_data
+    filtered_file_id = freq_data["file_id"]
+
+    # Verify download of filtered audio
+    dl_filt = client.get(f"/api/download/{filtered_file_id}")
+    assert dl_filt.status_code == 200
+    assert dl_filt.headers["content-type"] == "audio/wav"
+
+

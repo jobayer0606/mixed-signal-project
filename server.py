@@ -30,7 +30,23 @@ from pydantic import BaseModel
 
 from pyaudiolab.io_utils import load_wav, save_wav, info
 from pyaudiolab.effects import EFFECT_REGISTRY
+from pyaudiolab.effects.enhance import enhance_pipeline, ENHANCE_PRESETS
 from pyaudiolab.spectral import compute_spectrum, compute_spectrogram
+from pyaudiolab.labs import (
+    calculate_beat_metrics,
+    calculate_sampling_dsp,
+    calculate_fourier_metrics,
+    calculate_convolution_metrics,
+    calculate_frequency_explorer_metrics,
+)
+from pyaudiolab.speed_pitch_dsp import (
+    fft,
+    analyzeMovingFrame,
+    wsolaTimeStretch,
+    computeResampledBuffer,
+    evaluateAliasingState,
+    generateSynthetic440,
+)
 
 logger = logging.getLogger("pyaudiolab.server")
 
@@ -107,6 +123,19 @@ class EffectRequest(BaseModel):
     file_id: str
     params: Dict[str, Any] = {}
     selection: Dict[str, float] | None = None  # {start_s: float, end_s: float}
+
+
+class EnhanceRequest(BaseModel):
+    file_id: str
+    noise_reduction: float = 0.70
+    voice_clarity: float = 0.50
+    room_reduction: float = 0.45
+    voice_presence: float = 0.50
+    loudness: float = -16.0
+    neural_mode: bool = False
+    preset: str | None = None
+    params: Dict[str, Any] | None = None
+
 
 
 class FftRequest(BaseModel):
@@ -285,11 +314,88 @@ async def list_effects():
         "change_speed": {"name": "Speed / Rate", "category": "Tier 2 — Intermediate", "params": {"factor": 1.25}},
         "time_stretch": {"name": "Time Stretch (Pitch Preserved)", "category": "Tier 3 — Stretch Goals", "params": {"factor": 1.25, "window_size": 2048, "hop_length": 512}},
         "eq": {"name": "10-Band Graphic EQ", "category": "Tier 3 — Stretch Goals", "params": {"gains_db": [0.0]*10}},
+        "freq_filter": {"name": "FFT Frequency Explorer", "category": "Tier 3 — Stretch Goals", "params": {"filter_type": "bandpass", "low_freq": 300.0, "high_freq": 3000.0, "order": 8, "gain_db": 0.0, "normalize_audio": True}},
         "distort": {"name": "Distortion", "category": "Tier 3 — Stretch Goals", "params": {"drive_db": 12.0, "mode": "soft", "mix": 1.0}},
         "reverb": {"name": "Schroeder Reverb", "category": "Tier 3 — Stretch Goals", "params": {"room_size": 0.5, "damping": 0.5, "mix": 0.3}},
         "noise_reduction": {"name": "Noise Reduction (FFT)", "category": "Tier 3 — Stretch Goals", "params": {"noise_duration_ms": 500.0, "strength": 1.0, "floor": 0.002}},
+        "enhance": {
+            "name": "Audio Enhancement Studio",
+            "category": "Mastering Suite",
+            "params": {
+                "noise_reduction": 0.70,
+                "voice_clarity": 0.50,
+                "room_reduction": 0.45,
+                "voice_presence": 0.50,
+                "loudness": -16.0,
+                "neural_mode": False,
+                "preset": "podcast",
+            },
+        },
     }
     return effects_info
+
+
+@app.post("/api/effects/enhance")
+async def enhance_endpoint(req: EnhanceRequest):
+    """Full-stack mastering audio enhancement endpoint."""
+    in_path = _get_file_path(req.file_id)
+
+    try:
+        audio, sr = load_wav(in_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading audio: {str(e)}")
+
+    # Unpack parameters, allowing req.params dictionary to take precedence if provided
+    params = req.params or {}
+    noise_reduction = float(params.get("noise_reduction", req.noise_reduction))
+    voice_clarity = float(params.get("voice_clarity", req.voice_clarity))
+    room_reduction = float(params.get("room_reduction", req.room_reduction))
+    voice_presence = float(params.get("voice_presence", req.voice_presence))
+    loudness = float(params.get("loudness", req.loudness))
+    neural_mode = bool(params.get("neural_mode", req.neural_mode))
+    preset = params.get("preset", req.preset)
+
+    try:
+        enhanced_audio, report = enhance_pipeline(
+            audio,
+            sr,
+            noise_reduction=noise_reduction,
+            voice_clarity=voice_clarity,
+            room_reduction=room_reduction,
+            voice_presence=voice_presence,
+            loudness=loudness,
+            neural_mode=neural_mode,
+            preset=preset,
+        )
+    except Exception as e:
+        logger.exception("Enhancement pipeline failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
+
+    new_file_id = str(uuid.uuid4())
+    out_path = os.path.join(TEMP_DIR, f"{new_file_id}.wav")
+
+    try:
+        save_wav(out_path, enhanced_audio, sr)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving enhanced audio: {str(e)}")
+
+    duration_s = enhanced_audio.shape[0] / sr
+    channels = 2 if enhanced_audio.ndim == 2 else 1
+
+    return {
+        "file_id": req.file_id,
+        "enhanced_file_id": new_file_id,
+        "sample_rate": sr,
+        "channels": channels,
+        "frames": enhanced_audio.shape[0],
+        "duration_s": duration_s,
+        "input_metrics": report["input_metrics"],
+        "output_metrics": report["output_metrics"],
+        "parameters": report["parameters"],
+        "neural_engine": report["neural_engine"],
+        "stages": report["stages"],
+        "success": True,
+    }
 
 
 @app.post("/api/effects/{name}")
@@ -372,7 +478,206 @@ async def apply_effect_endpoint(name: str, req: EffectRequest):
     }
 
 
+# =========================================================================
+# Signal Labs API Endpoints (Pure Python DSP Calculations)
+# =========================================================================
+
+class BeatLabRequest(BaseModel):
+    f1: float = 440.0
+    f2: float = 444.0
+    a1: float = 0.8
+    a2: float = 0.8
+    shape1: str = "sine"
+    shape2: str = "sine"
+    time_window_ms: float = 25.0
+
+
+class SamplingLabRequest(BaseModel):
+    f: float = 700.0
+    fs: float = 1000.0
+    amp: float = 0.8
+    shape: str = "sine"
+    time_window_ms: float = 15.0
+
+
+class FourierLabRequest(BaseModel):
+    shape: str = "square"
+    n_terms: int = 5
+    amp: float = 0.8
+    f0: float = 100.0
+    time_window_ms: float = 20.0
+
+
+class ConvolutionLabRequest(BaseModel):
+    x: List[float] = [1.0, 2.0, 1.0]
+    h: List[float] = [1.0, 1.0]
+    n_index: int = 2
+    mode: str = "discrete"
+
+
+@app.post("/api/labs/beat")
+async def api_labs_beat(req: BeatLabRequest):
+    """Calculate wave interference & beat frequency metrics."""
+    return calculate_beat_metrics(
+        f1=req.f1,
+        f2=req.f2,
+        a1=req.a1,
+        a2=req.a2,
+        shape1=req.shape1,
+        shape2=req.shape2,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/sampling")
+async def api_labs_sampling(req: SamplingLabRequest):
+    """Calculate sampling, aliasing & Nyquist metrics."""
+    return calculate_sampling_dsp(
+        f=req.f,
+        fs=req.fs,
+        amp=req.amp,
+        shape=req.shape,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/fourier")
+async def api_labs_fourier(req: FourierLabRequest):
+    """Calculate Fourier series harmonic expansion & error metrics."""
+    return calculate_fourier_metrics(
+        shape=req.shape,
+        n_terms=req.n_terms,
+        amp=req.amp,
+        f0=req.f0,
+        time_window_ms=req.time_window_ms,
+    )
+
+
+@app.post("/api/labs/convolution")
+async def api_labs_convolution(req: ConvolutionLabRequest):
+    """Calculate discrete linear convolution and step mathematical derivation."""
+    return calculate_convolution_metrics(
+        x_seq=req.x,
+        h_seq=req.h,
+        n_index=req.n_index,
+        mode=req.mode,
+    )
+
+
+class FreqFilterLabRequest(BaseModel):
+    file_id: str
+    filter_type: str = "bandpass"
+    low_freq: float = 300.0
+    high_freq: float = 3000.0
+    order: int = 8
+    normalize_audio: bool = True
+    num_bars: int = 64
+
+
+@app.post("/api/labs/freq_filter")
+async def api_labs_freq_filter(req: FreqFilterLabRequest):
+    """Calculate Frequency Range Explorer FFT spectra and filtered audio for playback."""
+    in_path = _get_file_path(req.file_id)
+    try:
+        audio, sr = load_wav(in_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading audio: {str(e)}")
+
+    try:
+        metrics = calculate_frequency_explorer_metrics(
+            audio,
+            sr,
+            filter_type=req.filter_type,
+            low_freq=req.low_freq,
+            high_freq=req.high_freq,
+            order=req.order,
+            normalize_audio=req.normalize_audio,
+            num_bars=req.num_bars,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Filtering failed: {str(e)}")
+
+    filtered_audio = metrics.pop("filtered_audio")
+    filtered_file_id = str(uuid.uuid4())
+    out_path = os.path.join(TEMP_DIR, f"{filtered_file_id}.wav")
+
+    try:
+        save_wav(out_path, filtered_audio, sr)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving filtered audio: {str(e)}")
+
+    return {
+        "file_id": req.file_id,
+        "filtered_file_id": filtered_file_id,
+        **metrics,
+    }
+
+
+class SpeedPitchLabRequest(BaseModel):
+    file_id: Optional[str] = None
+    speed_factor: float = 1.0
+    target_fs: Optional[float] = None
+    resample_mode: str = "naive"  # "naive" | "smart"
+    time_sec: float = 0.5
+
+
+@app.post("/api/labs/speed_pitch")
+async def api_labs_speed_pitch(req: SpeedPitchLabRequest):
+    """Calculate speed, pitch, resampling, FFT spectra and aliasing status."""
+    if req.file_id:
+        in_path = _get_file_path(req.file_id)
+        try:
+            audio, sr = load_wav(in_path)
+            if audio.ndim > 1:
+                audio = audio[:, 0]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error reading audio: {str(e)}")
+    else:
+        sr = 44100
+        audio = generateSynthetic440(sampleRate=sr, duration=2.0)
+
+    try:
+        resampled = computeResampledBuffer(
+            audio,
+            speedFactor=req.speed_factor,
+            targetFs=req.target_fs,
+            resampleMode=req.resample_mode,
+            sampleRate=sr,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Resampling failed: {str(e)}")
+
+    orig_spec = analyzeMovingFrame(audio, req.time_sec, sampleRate=sr)
+    proc_spec = analyzeMovingFrame(resampled, req.time_sec, sampleRate=sr)
+
+    aliasing = evaluateAliasingState(
+        origPeakFreq=orig_spec["peakFreq"],
+        procPeakFreq=proc_spec["peakFreq"],
+        targetFs=req.target_fs or sr,
+        speedFactor=req.speed_factor,
+        resampleMode=req.resample_mode,
+    )
+
+    proc_file_id = str(uuid.uuid4())
+    out_path = os.path.join(TEMP_DIR, f"{proc_file_id}.wav")
+    try:
+        save_wav(out_path, resampled, sr)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving resampled audio: {str(e)}")
+
+    return {
+        "file_id": req.file_id,
+        "processed_file_id": proc_file_id,
+        "orig_duration": len(audio) / sr,
+        "proc_duration": len(resampled) / sr,
+        "orig_spec": orig_spec,
+        "proc_spec": proc_spec,
+        "aliasing": aliasing,
+    }
+
+
 # Mount sample_wavs so the frontend's "Samples" menu can fetch bundled demo
+
 # files directly (e.g. GET /sample_wavs/test_sine_mono.wav). Must be mounted
 # before the catch-all "/" static mount below.
 sample_wavs_dir = os.path.join(os.path.dirname(__file__), "sample_wavs")
