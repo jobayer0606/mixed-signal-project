@@ -26,7 +26,6 @@ Parameters:
 from __future__ import annotations
 import numpy as np
 
-
 def reverse(audio: np.ndarray, sr: int) -> np.ndarray:
     """Reverse the audio in time.
 
@@ -51,7 +50,6 @@ def invert(audio: np.ndarray, sr: int) -> np.ndarray:
         Phase-inverted float64 array, same shape as input.
     """
     return audio * -1.0
-
 
 def trim_silence(
     audio: np.ndarray,
