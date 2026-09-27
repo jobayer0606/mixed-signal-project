@@ -404,11 +404,26 @@
     if (cardFourier) cardFourier.addEventListener('click', () => switchLab('fourier'));
     if (cardConvolution) cardConvolution.addEventListener('click', () => switchLab('convolution'));
     if (cardFreq) cardFreq.addEventListener('click', () => switchLab('freq-explorer'));
+
+    // Force explicit display states on ALL workspaces at page load.
+    // This defeats any CSS rule (from style.css or inherited) that might override [hidden].
+    const wsBeat = document.getElementById('workspace-beat-freq');
+    const wsSampling = document.getElementById('workspace-sampling');
+    const wsFourier = document.getElementById('workspace-fourier');
+    const wsConvolution = document.getElementById('workspace-convolution');
+    const wsFreq = document.getElementById('workspace-freq-explorer');
+
+    if (wsBeat) { wsBeat.hidden = false; wsBeat.style.display = 'flex'; }
+    if (wsSampling) { wsSampling.hidden = true; wsSampling.style.display = 'none'; }
+    if (wsFourier) { wsFourier.hidden = true; wsFourier.style.display = 'none'; }
+    if (wsConvolution) { wsConvolution.hidden = true; wsConvolution.style.display = 'none'; }
+    if (wsFreq) { wsFreq.hidden = true; wsFreq.style.display = 'none'; }
   }
 
   function switchLab(labId) {
     if (labId === activeLabId) return;
 
+    const prevLabId = activeLabId;
     activeLabId = labId;
 
     const cardBeat = document.getElementById('card-beat-freq');
@@ -430,12 +445,12 @@
     if (cardConvolution) cardConvolution.classList.toggle('active', labId === 'convolution');
     if (cardFreq) cardFreq.classList.toggle('active', labId === 'freq-explorer');
 
-    // Toggle Workspaces
-    if (wsBeat) wsBeat.toggleAttribute('hidden', labId !== 'beat-freq');
-    if (wsSampling) wsSampling.toggleAttribute('hidden', labId !== 'sampling');
-    if (wsFourier) wsFourier.toggleAttribute('hidden', labId !== 'fourier');
-    if (wsConvolution) wsConvolution.toggleAttribute('hidden', labId !== 'convolution');
-    if (wsFreq) wsFreq.toggleAttribute('hidden', labId !== 'freq-explorer');
+    // Toggle Workspaces with explicit hidden and display styling
+    if (wsBeat) { wsBeat.hidden = (labId !== 'beat-freq'); wsBeat.style.display = (labId === 'beat-freq' ? 'flex' : 'none'); }
+    if (wsSampling) { wsSampling.hidden = (labId !== 'sampling'); wsSampling.style.display = (labId === 'sampling' ? 'flex' : 'none'); }
+    if (wsFourier) { wsFourier.hidden = (labId !== 'fourier'); wsFourier.style.display = (labId === 'fourier' ? 'flex' : 'none'); }
+    if (wsConvolution) { wsConvolution.hidden = (labId !== 'convolution'); wsConvolution.style.display = (labId === 'convolution' ? 'flex' : 'none'); }
+    if (wsFreq) { wsFreq.hidden = (labId !== 'freq-explorer'); wsFreq.style.display = (labId === 'freq-explorer' ? 'flex' : 'none'); }
 
     // Stop audio on hidden labs
     if (labId !== 'beat-freq') beatLab.stopAudio();
@@ -443,7 +458,17 @@
     if (labId !== 'fourier') fourierLab.stopAudio();
     if (labId !== 'convolution') convolutionLab.stopAudio();
     if (labId !== 'freq-explorer') freqExplorerLab.stopAudio();
+
+    // Reset canvas dimensions in the newly-visible workspace so they re-measure on next draw.
+    // Canvases that were drawn while the workspace was hidden get set to 0×0 (clientHeight=0)
+    // and stay blank even after the workspace is shown. Resetting forces the draw functions
+    // to re-read clientWidth/clientHeight which will now be correct.
+    const activeWs = document.getElementById('workspace-' + labId);
+    if (activeWs) {
+      activeWs.querySelectorAll('canvas').forEach(c => { c.width = 0; c.height = 0; });
+    }
   }
+
 
   // =========================================================================
   // 4. LAB 1: WAVE INTERFERENCE & BEAT FREQUENCY
@@ -498,10 +523,10 @@
 
     function stopAudio() {
       const now = audioCtx ? audioCtx.currentTime : 0;
-      if (osc1) { try { osc1.stop(now); osc1.disconnect(); } catch (e) {} osc1 = null; }
-      if (osc2) { try { osc2.stop(now); osc2.disconnect(); } catch (e) {} osc2 = null; }
-      if (gain1) { try { gain1.disconnect(); } catch (e) {} gain1 = null; }
-      if (gain2) { try { gain2.disconnect(); } catch (e) {} gain2 = null; }
+      if (osc1) { try { osc1.stop(now); osc1.disconnect(); } catch (e) { } osc1 = null; }
+      if (osc2) { try { osc2.stop(now); osc2.disconnect(); } catch (e) { } osc2 = null; }
+      if (gain1) { try { gain1.disconnect(); } catch (e) { } gain1 = null; }
+      if (gain2) { try { gain2.disconnect(); } catch (e) { } gain2 = null; }
       state.isPlaying = false;
       updatePlayStopButtons();
     }
@@ -616,8 +641,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -640,8 +667,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 160) : 160;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -774,7 +803,12 @@
     }
 
     return {
-      init: function () { bindEvents(); updateMathMetrics(); },
+      init: function () {
+        bindEvents();
+        updateMathMetrics();
+        // Delay first draw by two frames so flex layout resolves before canvas sizing.
+        requestAnimationFrame(() => requestAnimationFrame(() => drawAllScopes(simTimeSec)));
+      },
       render: render,
       stopAudio: stopAudio,
       getDSP: function () { return state.dsp; }
@@ -788,6 +822,8 @@
     const state = {
       f: 700.0, fs: 1000.0, amp: 0.8, shape: 'sine',
       timeWindowMs: 15.0, playingMode: null,
+      oscPaused: false,
+      oscSpeed: 1.0,
       dsp: PythonDSP.calculateSamplingDSP(700.0, 1000.0)
     };
 
@@ -818,10 +854,10 @@
 
     function stopAudio() {
       if (osc) {
-        try { const now = audioCtx ? audioCtx.currentTime : 0; osc.stop(now); osc.disconnect(); } catch (e) {}
+        try { const now = audioCtx ? audioCtx.currentTime : 0; osc.stop(now); osc.disconnect(); } catch (e) { }
         osc = null;
       }
-      if (gainNode) { try { gainNode.disconnect(); } catch (e) {} gainNode = null; }
+      if (gainNode) { try { gainNode.disconnect(); } catch (e) { } gainNode = null; }
       state.playingMode = null;
       updateAudioButtons();
     }
@@ -884,7 +920,7 @@
       const elScopeAliasSub = document.getElementById('s-scope-alias-sub');
 
       if (elScope1Sub) elScope1Sub.textContent = `f = ${state.f.toFixed(1)} Hz · ${state.shape}`;
-      if (elScope2Sub) elScope2Sub.textContent = `Fs = ${state.fs.toFixed(1)} Hz · Sample Stems (T_s = ${(1000/state.fs).toFixed(2)} ms)`;
+      if (elScope2Sub) elScope2Sub.textContent = `Fs = ${state.fs.toFixed(1)} Hz · Sample Stems (T_s = ${(1000 / state.fs).toFixed(2)} ms)`;
       if (elScopeAliasSub) {
         if (dsp.status === 'ALIASING') {
           elScopeAliasSub.textContent = `Apparent Alias Frequency f_alias = ${dsp.alias_freq.toFixed(1)} Hz (Folded)`;
@@ -894,24 +930,47 @@
       }
     }
 
-    function render(now) {
-      if (activeLabId !== 'sampling') return;
+    let frameCount = 0;
+    let lastTime = null;
+    let simTimeSec = 0;
 
-      const elapsedSec = (now - startTime) / 1000.0;
+    function drawAllScopes(tSec) {
       const timeWinSec = state.timeWindowMs / 1000.0;
       const dsp = state.dsp || PythonDSP.calculateSamplingDSP(state.f, state.fs);
 
-      drawContinuousScope('canvas-s-orig', elapsedSec, timeWinSec);
-      drawSampledScope('canvas-s-sampled', elapsedSec, timeWinSec);
-      drawReconstructedScope('canvas-s-alias', dsp, elapsedSec, timeWinSec);
+      drawContinuousScope('canvas-s-orig', tSec, timeWinSec);
+      drawSampledScope('canvas-s-sampled', tSec, timeWinSec);
+      drawReconstructedScope('canvas-s-alias', dsp, tSec, timeWinSec);
+    }
+
+    function render(now) {
+      if (typeof activeLabId !== 'undefined' && activeLabId !== 'sampling') {
+        lastTime = null;
+        return;
+      }
+
+      if (lastTime === null) lastTime = now;
+      const dt = Math.min((now - lastTime) / 1000.0, 0.1);
+      lastTime = now;
+
+      if (state.oscPaused) return;
+
+      frameCount++;
+      const interval = state.oscSpeed < 1.0 ? Math.round(1.0 / Math.max(state.oscSpeed, 0.001)) : 1;
+      if (interval > 1 && frameCount % interval !== 0) return;
+
+      simTimeSec += dt * (interval > 1 ? interval : 1) * state.oscSpeed;
+      drawAllScopes(simTimeSec);
     }
 
     function drawContinuousScope(canvasId, tNow, tWindow) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -931,8 +990,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -970,9 +1031,12 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
       const midY = height / 2; const scaleY = (height / 2 - 10) / 1.2;
@@ -1015,12 +1079,12 @@
     }
 
     function bindEvents() {
-      bindInput('s-input-f', (val) => { state.f = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'orig') playTone(state.f, 'orig'); });
-      bindInput('s-input-a', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); });
-      bindSelect('s-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); });
+      bindInput('s-input-f', (val) => { state.f = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'orig') playTone(state.f, 'orig'); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindInput('s-input-a', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindSelect('s-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode); if (state.oscPaused) drawAllScopes(simTimeSec); });
 
-      bindInput('s-input-fs', (val) => { state.fs = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'alias') playTone(state.dsp.alias_freq, 'alias'); });
-      bindInput('s-input-time-window', (val) => { state.timeWindowMs = parseFloat(val); updateMathMetrics(); });
+      bindInput('s-input-fs', (val) => { state.fs = parseFloat(val); updateMathMetrics(); if (state.playingMode === 'alias') playTone(state.dsp.alias_freq, 'alias'); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindInput('s-input-time-window', (val) => { state.timeWindowMs = parseFloat(val); updateMathMetrics(); if (state.oscPaused) drawAllScopes(simTimeSec); });
 
       const btnOrig = document.getElementById('s-btn-play-orig');
       const btnAlias = document.getElementById('s-btn-play-alias');
@@ -1029,6 +1093,53 @@
       if (btnOrig) btnOrig.addEventListener('click', () => playTone(state.f, 'orig'));
       if (btnAlias) btnAlias.addEventListener('click', () => playTone(state.dsp.alias_freq, 'alias'));
       if (btnStop) btnStop.addEventListener('click', stopAudio);
+
+      // Oscilloscope Freeze and Speed Controls
+      const btnOscFreeze = document.getElementById('s-btn-osc-freeze');
+      const btnOscSlow = document.getElementById('s-btn-osc-slow');
+      const btnOscNormal = document.getElementById('s-btn-osc-normal');
+
+      function updateOscButtons() {
+        if (btnOscFreeze) {
+          btnOscFreeze.textContent = state.oscPaused ? '▶ Resume' : '⏸ Freeze';
+          btnOscFreeze.classList.toggle('active', state.oscPaused);
+        }
+        if (btnOscSlow) {
+          btnOscSlow.classList.toggle('active', !state.oscPaused && state.oscSpeed === 0.1);
+        }
+        if (btnOscNormal) {
+          btnOscNormal.classList.toggle('active', !state.oscPaused && state.oscSpeed === 1.0);
+        }
+      }
+
+      if (btnOscFreeze) {
+        btnOscFreeze.addEventListener('click', () => {
+          state.oscPaused = !state.oscPaused;
+          lastTime = null;
+          updateOscButtons();
+          if (state.oscPaused) {
+            drawAllScopes(simTimeSec);
+          }
+        });
+      }
+
+      if (btnOscSlow) {
+        btnOscSlow.addEventListener('click', () => {
+          state.oscSpeed = 0.1;
+          state.oscPaused = false;
+          lastTime = null;
+          updateOscButtons();
+        });
+      }
+
+      if (btnOscNormal) {
+        btnOscNormal.addEventListener('click', () => {
+          state.oscSpeed = 1.0;
+          state.oscPaused = false;
+          lastTime = null;
+          updateOscButtons();
+        });
+      }
 
       bindPreset('s-preset-safe', 100.0, 1000.0);
       bindPreset('s-preset-near', 400.0, 1000.0);
@@ -1047,11 +1158,16 @@
         if (elF) elF.value = fVal; if (elFs) elFs.value = fsVal;
         updateMathMetrics();
         if (state.playingMode) playTone(state.playingMode === 'orig' ? state.f : state.dsp.alias_freq, state.playingMode);
+        if (state.oscPaused) drawAllScopes(simTimeSec);
       });
     }
 
     return {
-      init: function () { bindEvents(); updateMathMetrics(); },
+      init: function () {
+        bindEvents();
+        updateMathMetrics();
+        requestAnimationFrame(() => requestAnimationFrame(() => drawAllScopes(simTimeSec)));
+      },
       render: render,
       stopAudio: stopAudio,
       getDSP: function () { return state.dsp; }
@@ -1065,6 +1181,8 @@
     const state = {
       f0: 100.0, nTerms: 5, amp: 0.8, shape: 'square',
       timeWindowMs: 20.0, buildSpeed: 5, isAnimating: false, isPlayingAudio: false,
+      oscPaused: false,
+      oscSpeed: 1.0,
       dsp: PythonDSP.calculateFourierMetrics('square', 5, 0.8, 100.0)
     };
 
@@ -1109,10 +1227,10 @@
     function stopAudio() {
       const now = audioCtx ? audioCtx.currentTime : 0;
       oscArray.forEach(({ osc, gain }) => {
-        try { osc.stop(now); osc.disconnect(); gain.disconnect(); } catch (e) {}
+        try { osc.stop(now); osc.disconnect(); gain.disconnect(); } catch (e) { }
       });
       oscArray = [];
-      if (masterGain) { try { masterGain.disconnect(); } catch (e) {} masterGain = null; }
+      if (masterGain) { try { masterGain.disconnect(); } catch (e) { } masterGain = null; }
       state.isPlayingAudio = false;
       updateAudioButtons();
     }
@@ -1186,22 +1304,45 @@
       if (elScope3Sub) elScope3Sub.textContent = `Stem Plot |c_n| vs Harmonic n (1 to ${highestHarmonic}) · Active: n = ${latestHarmonic.n}`;
     }
 
-    function render(now) {
-      if (activeLabId !== 'fourier') return;
-      const elapsedSec = (now - startTime) / 1000.0;
-      const timeWinSec = state.timeWindowMs / 1000.0;
+    let frameCount = 0;
+    let lastTime = null;
+    let simTimeSec = 0;
 
-      drawReconstructionScope('canvas-f-sum', elapsedSec, timeWinSec);
-      drawComponentScope('canvas-f-component', elapsedSec, timeWinSec);
+    function drawAllScopes(tSec) {
+      const timeWinSec = state.timeWindowMs / 1000.0;
+      drawReconstructionScope('canvas-f-sum', tSec, timeWinSec);
+      drawComponentScope('canvas-f-component', tSec, timeWinSec);
       drawSpectrumScope('canvas-f-spectrum');
+    }
+
+    function render(now) {
+      if (typeof activeLabId !== 'undefined' && activeLabId !== 'fourier') {
+        lastTime = null;
+        return;
+      }
+
+      if (lastTime === null) lastTime = now;
+      const dt = Math.min((now - lastTime) / 1000.0, 0.1);
+      lastTime = now;
+
+      if (state.oscPaused) return;
+
+      frameCount++;
+      const interval = state.oscSpeed < 1.0 ? Math.round(1.0 / Math.max(state.oscSpeed, 0.001)) : 1;
+      if (interval > 1 && frameCount % interval !== 0) return;
+
+      simTimeSec += dt * (interval > 1 ? interval : 1) * state.oscSpeed;
+      drawAllScopes(simTimeSec);
     }
 
     function drawReconstructionScope(canvasId, tNow, tWindow) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -1232,8 +1373,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
@@ -1256,9 +1399,12 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 160) : 160;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+
 
       ctx.clearRect(0, 0, width, height); drawGrid(ctx, width, height);
 
@@ -1323,6 +1469,7 @@
           const elInputN = document.getElementById('f-input-n');
           if (elInputN) elInputN.value = state.nTerms;
           updateMathMetrics();
+          if (state.oscPaused) drawAllScopes(simTimeSec);
         } else { stopBuildAnimation(); }
       }, delayMs);
     }
@@ -1341,12 +1488,12 @@
     }
 
     function bindEvents() {
-      bindSelect('f-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.isPlayingAudio) startAudio(); });
-      bindInput('f-input-f0', (val) => { state.f0 = parseFloat(val); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); });
-      bindInput('f-input-amp', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); });
-      bindInput('f-input-n', (val) => { state.nTerms = parseInt(val, 10); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); });
+      bindSelect('f-select-shape', (val) => { state.shape = val; updateMathMetrics(); if (state.isPlayingAudio) startAudio(); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindInput('f-input-f0', (val) => { state.f0 = parseFloat(val); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindInput('f-input-amp', (val) => { state.amp = parseFloat(val); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); if (state.oscPaused) drawAllScopes(simTimeSec); });
+      bindInput('f-input-n', (val) => { state.nTerms = parseInt(val, 10); updateMathMetrics(); if (state.isPlayingAudio) startAudio(); if (state.oscPaused) drawAllScopes(simTimeSec); });
       bindInput('f-input-speed', (val) => { state.buildSpeed = parseInt(val, 10); updateMathMetrics(); });
-      bindInput('f-input-time-window', (val) => { state.timeWindowMs = parseFloat(val); updateMathMetrics(); });
+      bindInput('f-input-time-window', (val) => { state.timeWindowMs = parseFloat(val); updateMathMetrics(); if (state.oscPaused) drawAllScopes(simTimeSec); });
 
       const btnPlayAnim = document.getElementById('f-btn-play-anim');
       const btnPauseAnim = document.getElementById('f-btn-pause-anim');
@@ -1361,11 +1508,59 @@
           const elN = document.getElementById('f-input-n');
           if (elN) elN.value = 1;
           updateMathMetrics();
+          if (state.oscPaused) drawAllScopes(simTimeSec);
         });
       }
       if (btnPlayAudio) {
         btnPlayAudio.addEventListener('click', () => {
           if (state.isPlayingAudio) stopAudio(); else startAudio();
+        });
+      }
+
+      // Oscilloscope Freeze and Speed Controls
+      const btnOscFreeze = document.getElementById('f-btn-osc-freeze');
+      const btnOscSlow = document.getElementById('f-btn-osc-slow');
+      const btnOscNormal = document.getElementById('f-btn-osc-normal');
+
+      function updateOscButtons() {
+        if (btnOscFreeze) {
+          btnOscFreeze.textContent = state.oscPaused ? '▶ Resume' : '⏸ Freeze';
+          btnOscFreeze.classList.toggle('active', state.oscPaused);
+        }
+        if (btnOscSlow) {
+          btnOscSlow.classList.toggle('active', !state.oscPaused && state.oscSpeed === 0.1);
+        }
+        if (btnOscNormal) {
+          btnOscNormal.classList.toggle('active', !state.oscPaused && state.oscSpeed === 1.0);
+        }
+      }
+
+      if (btnOscFreeze) {
+        btnOscFreeze.addEventListener('click', () => {
+          state.oscPaused = !state.oscPaused;
+          lastTime = null;
+          updateOscButtons();
+          if (state.oscPaused) {
+            drawAllScopes(simTimeSec);
+          }
+        });
+      }
+
+      if (btnOscSlow) {
+        btnOscSlow.addEventListener('click', () => {
+          state.oscSpeed = 0.1;
+          state.oscPaused = false;
+          lastTime = null;
+          updateOscButtons();
+        });
+      }
+
+      if (btnOscNormal) {
+        btnOscNormal.addEventListener('click', () => {
+          state.oscSpeed = 1.0;
+          state.oscPaused = false;
+          lastTime = null;
+          updateOscButtons();
         });
       }
 
@@ -1390,11 +1585,16 @@
         if (elN) elN.value = nVal;
         updateMathMetrics();
         if (state.isPlayingAudio) startAudio();
+        if (state.oscPaused) drawAllScopes(simTimeSec);
       });
     }
 
     return {
-      init: function () { bindEvents(); updateMathMetrics(); },
+      init: function () {
+        bindEvents();
+        updateMathMetrics();
+        requestAnimationFrame(() => requestAnimationFrame(() => drawAllScopes(simTimeSec)));
+      },
       render: render,
       stopAudio: stopAudio,
       getDSP: function () { return state.dsp; }
@@ -1530,8 +1730,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height);
@@ -1590,8 +1792,10 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
 
       ctx.clearRect(0, 0, width, height);
@@ -1645,9 +1849,12 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const width = canvas.parentElement.clientWidth;
-      const height = canvas.parentElement.clientHeight;
+      const wrap = canvas.parentElement;
+      const width = wrap ? (wrap.clientWidth || canvas.clientWidth || 600) : 600;
+      const height = wrap ? (wrap.clientHeight || canvas.clientHeight || 140) : 140;
+      if (width <= 0 || height <= 0) return;
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+
 
       ctx.clearRect(0, 0, width, height);
       drawGrid(ctx, width, height);
@@ -2090,7 +2297,7 @@
                   // Seamlessly switch active playback node
                   startPlayback('filtered', state.playhead);
                 }
-              }, (err) => {});
+              }, (err) => { });
             }
           }
 
@@ -2290,7 +2497,7 @@
 
     function stopPlaybackNode() {
       if (state.activeSourceNode) {
-        try { state.activeSourceNode.stop(); } catch (e) {}
+        try { state.activeSourceNode.stop(); } catch (e) { }
         state.activeSourceNode = null;
       }
       state.isPlaying = false;
@@ -3014,35 +3221,6 @@
     animFrameId = requestAnimationFrame(globalLoop);
   }
 
-  let activeLabId = 'beat-freq';
-
-  function initLabSwitcher() {
-    const cards = document.querySelectorAll('.lab-card');
-    cards.forEach((card) => {
-      card.addEventListener('click', () => {
-        const labId = card.getAttribute('data-lab');
-        if (!labId || labId === activeLabId) return;
-
-        // Stop all audio on lab change
-        beatLab.stopAudio();
-        samplingLab.stopAudio();
-        fourierLab.stopAudio();
-        convolutionLab.stopAudio();
-        freqExplorerLab.stopAudio();
-
-        cards.forEach((c) => c.classList.remove('active'));
-        card.classList.add('active');
-
-        activeLabId = labId;
-
-        document.querySelectorAll('.lab-workspace').forEach((ws) => {
-          ws.hidden = true;
-        });
-        const activeWs = document.getElementById(`workspace-${labId}`);
-        if (activeWs) activeWs.hidden = false;
-      });
-    });
-  }
 
   // Init on DOM ready
   document.addEventListener('DOMContentLoaded', () => {
@@ -3065,4 +3243,3 @@
   });
 
 })();
-

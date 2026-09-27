@@ -445,6 +445,16 @@
           <!-- OSCILLOSCOPE STACK -->
           <div class="oscilloscope-stack">
 
+            <!-- OSCILLOSCOPE CONTROLS TOOLBAR -->
+            <div class="panel" style="padding: 6px 12px; margin-bottom: 4px; display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+              <span class="panel-label">Oscilloscope Controls</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn btn-ghost" id="s-btn-osc-freeze" style="padding: 3px 10px; font-size: 11px; height: auto;">⏸ Freeze</button>
+                <button class="btn btn-ghost" id="s-btn-osc-slow" style="padding: 3px 10px; font-size: 11px; height: auto;">Slow (0.1x)</button>
+                <button class="btn btn-ghost active" id="s-btn-osc-normal" style="padding: 3px 10px; font-size: 11px; height: auto;">Normal (1x)</button>
+              </div>
+            </div>
+
             <!-- CANVAS 1: CONTINUOUS SIGNAL -->
             <div class="panel scope-panel">
               <div class="panel-head">
@@ -633,6 +643,16 @@
 
           <!-- OSCILLOSCOPE STACK -->
           <div class="oscilloscope-stack">
+
+            <!-- OSCILLOSCOPE CONTROLS TOOLBAR -->
+            <div class="panel" style="padding: 6px 12px; margin-bottom: 4px; display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+              <span class="panel-label">Oscilloscope Controls</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn btn-ghost" id="f-btn-osc-freeze" style="padding: 3px 10px; font-size: 11px; height: auto;">⏸ Freeze</button>
+                <button class="btn btn-ghost" id="f-btn-osc-slow" style="padding: 3px 10px; font-size: 11px; height: auto;">Slow (0.1x)</button>
+                <button class="btn btn-ghost active" id="f-btn-osc-normal" style="padding: 3px 10px; font-size: 11px; height: auto;">Normal (1x)</button>
+              </div>
+            </div>
 
             <!-- CANVAS 1: TARGET VS FOURIER RECONSTRUCTION -->
             <div class="panel scope-panel hero-scope">
